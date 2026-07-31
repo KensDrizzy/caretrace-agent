@@ -1,0 +1,73 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: mindbridge
+      MYSQL_USER: mindbridge
+      MYSQL_PASSWORD: mindbridge
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "13306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      AGENT_FRAMEWORK: ${AGENT_FRAMEWORK:-event_driven_multi_agent}
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mindbridge-qwen2.5-7b-ft:latest}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+      DATABASE_URL: mysql+pymysql://mindbridge:mindbridge@mysql:3306/mindbridge?charset=utf8mb4
+      REDIS_URL: redis://redis:6379/0
+      KNOWLEDGE_VECTOR_ENABLED: ${KNOWLEDGE_VECTOR_ENABLED:-true}
+      KNOWLEDGE_VECTOR_REQUIRED: ${KNOWLEDGE_VECTOR_REQUIRED:-false}
+      CHROMA_PERSIST_DIR: /app/data/chroma
+      CHROMA_SNAPSHOT_DIR: /app/data/chroma-snapshots
+      CHROMA_COLLECTION_NAME: ${CHROMA_COLLECTION_NAME:-mindbridge_knowledge}
+      TOOL_QUEUE_ENABLED: ${TOOL_QUEUE_ENABLED:-true}
+      TOOL_QUEUE_EXCEL_WORKERS: ${TOOL_QUEUE_EXCEL_WORKERS:-1}
+      TOOL_QUEUE_EMAIL_WORKERS: ${TOOL_QUEUE_EMAIL_WORKERS:-2}
+      ALERT_EMAIL_DELIVERY_MODE: ${ALERT_EMAIL_DELIVERY_MODE:-log}
+      ALERT_EMAIL_RATE_LIMIT_PER_MINUTE: ${ALERT_EMAIL_RATE_LIMIT_PER_MINUTE:-30}
+      ALERT_EMAIL_SUBJECT_PREFIX: ${ALERT_EMAIL_SUBJECT_PREFIX:-[CareTrace 高风险预警]}
+      EXCEL_PATH: /app/data/caretrace-risk-ledger.xlsx
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./skills:/app/skills
+      # Local dev: edit JS/CSS without rebuild. The Dockerfile already bakes static files for prod.
+      - ./app/static:/app/static
+
+volumes:
+  mysql-data:
+  redis-data:

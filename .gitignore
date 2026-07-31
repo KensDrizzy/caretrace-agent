@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.uploads/
+data/*.db
+data/*.sqlite
+data/*.xlsx
+data/chroma/
+target/
+.DS_Store
+
+# Model weights (large binary files)
+models/

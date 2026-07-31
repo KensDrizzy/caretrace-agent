@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CareTrace 学生端</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css?v=student-premium-20260726">
+</head>
+<body class="student-page">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo student-logo">CT</div>
+      <div>
+        <p class="eyebrow">STUDENT COMPANION</p>
+        <h1>CareTrace 学生心理陪伴</h1>
+        <p class="topbar-subtitle">随时倾听，认真回应</p>
+      </div>
+    </div>
+    <div class="status-row">
+      <span id="serviceState" class="pill warn">连接中</span>
+      <span id="modelState" class="pill warn">模型读取中</span>
+      <div id="accountBadge" class="account">
+        <strong id="activeAccount">学生</strong>
+        <span>学生端</span>
+      </div>
+      <button id="switchAccount" class="dark-btn" type="button">退出</button>
+    </div>
+  </header>
+
+  <main class="student-layout premium-student-layout">
+    <aside class="student-rail">
+      <section class="panel recent-sessions-panel">
+        <div class="section-head">
+          <div>
+            <p class="panel-label">RECENT CONVERSATIONS</p>
+            <h3>最近对话</h3>
+          </div>
+        </div>
+        <ul id="recentSessions" class="recent-sessions">
+          <li class="recent-empty">暂无历史对话</li>
+        </ul>
+      </section>
+
+      <section class="companion-card">
+        <div class="companion-visual" role="img" aria-label="阳光下在校园空间中书写的学生"></div>
+        <div class="companion-copy">
+          <span>YOUR SAFE SPACE</span>
+          <h2>此刻，给自己一点空间</h2>
+          <p>不用组织好语言，从最真实的一句话开始就好。</p>
+        </div>
+      </section>
+
+      <section class="panel checkin-panel">
+        <div class="section-head">
+          <div>
+            <p class="panel-label">QUICK CHECK-IN</p>
+            <h3>最近感觉怎么样？</h3>
+          </div>
+          <span class="checkin-note">选择一个开始</span>
+        </div>
+        <div class="signal-grid">
+          <button class="signal mood-signal" type="button" data-quick="我最近压力很大，晚上总是睡不着。">
+            <span class="signal-icon">◒</span>
+            <span><strong>压力与睡眠</strong><small>总是紧绷或睡不好</small></span>
+          </button>
+          <button class="signal mood-signal" type="button" data-quick="我感觉很焦虑，考试前完全静不下来。">
+            <span class="signal-icon">≈</span>
+            <span><strong>焦虑与考试</strong><small>心里乱，难以静下来</small></span>
+          </button>
+          <button class="signal mood-signal" type="button" data-quick="我最近情绪很低落，不太想和别人说话。">
+            <span class="signal-icon">—</span>
+            <span><strong>低落与孤独</strong><small>没力气，也不想说话</small></span>
+          </button>
+          <button class="signal mood-signal" type="button" data-quick="我想聊聊最近和家人的矛盾。">
+            <span class="signal-icon">↗</span>
+            <span><strong>关系与困扰</strong><small>家人、朋友或亲密关系</small></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="support-note">
+        <span class="support-mark">CT</span>
+        <div>
+          <strong>温和、私密、有边界</strong>
+          <p>对话用于心理支持，不替代专业诊断；如遇紧急危险，请立即联系身边可信任的人或当地紧急服务。</p>
+        </div>
+      </section>
+    </aside>
+
+    <section class="chat-panel student-chat">
+      <div class="chat-head student-chat-head">
+        <div class="chat-heading-wrap">
+          <span class="assistant-avatar">CT</span>
+          <div>
+            <p class="panel-label">CARETRACE COMPANION</p>
+            <h2 id="studentGreeting">今天想聊些什么？</h2>
+            <p class="chat-subtitle">我会认真听，也会陪你一起找到下一小步。</p>
+          </div>
+        </div>
+        <div class="session-state">
+          <span class="session-dot"></span>
+          <span id="sessionBadge" class="pill">READY</span>
+        </div>
+      </div>
+      <div class="student-trust-row" aria-label="对话特点">
+        <span><i></i>耐心倾听</span>
+        <span><i></i>尊重隐私</span>
+        <span><i></i>风险时建议线下支持</span>
+      </div>
+      <div id="messages" class="messages">
+        <div class="empty student-welcome">
+          <span class="welcome-kicker">A QUIET PLACE TO BEGIN</span>
+          <strong>你不需要把一切都说清楚</strong>
+          <p>可以说压力、睡眠、关系或考试，也可以只写下此刻最卡住你的那句话。</p>
+          <div class="welcome-prompts">
+            <button type="button" data-quick="最近发生了一件事，让我一直放不下。">最近有件事放不下</button>
+            <button type="button" data-quick="我说不上来原因，但最近总觉得很累。">说不上来，但很累</button>
+            <button type="button" data-quick="我想先整理一下现在的情绪。">帮我整理一下情绪</button>
+          </div>
+        </div>
+      </div>
+      <form id="chatForm" class="composer">
+        <div class="composer-shell">
+          <textarea id="messageInput" maxlength="1000" placeholder="慢慢写，我在这里听着……" rows="3"></textarea>
+          <div class="composer-meta">
+            <span>你的表达不需要完美</span>
+            <span id="charCount">0 / 1000</span>
+          </div>
+        </div>
+        <div class="composer-actions student-composer-actions">
+          <span class="keyboard-hint">Enter 换行 · 点击按钮发送</span>
+          <div>
+            <button id="newSession" class="ghost" type="button">重新开始</button>
+            <button id="sendButton" class="primary send-button" type="submit">发送消息 <span>↗</span></button>
+          </div>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script src="/student.js?v=student-premium-20260726b"></script>
+</body>
+</html>
