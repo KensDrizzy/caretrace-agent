@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -66,6 +66,11 @@ class ChatMessage(Base):
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
 
+    __table_args__ = (
+        # The context agent repeatedly loads the most recent messages for a session.
+        Index("ix_chat_messages_session_created", "session_id", "created_at"),
+    )
+
 
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
@@ -75,7 +80,14 @@ class KnowledgeChunk(Base):
     source_index: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     embedding_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Hash of the full source document. Used to skip re-chunking unchanged files on startup.
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+    __table_args__ = (
+        # Speeds up per-source chunk reads and neighbor lookups during RAG expansion.
+        Index("ix_knowledge_chunks_source_index", "source", "source_index"),
+    )
 
 
 class PsychologicalReport(Base):

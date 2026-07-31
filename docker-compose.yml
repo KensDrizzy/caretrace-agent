@@ -20,6 +20,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    restart: unless-stopped
 
   redis:
     image: redis:7.2-alpine
@@ -32,6 +33,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    restart: unless-stopped
 
   app:
     build: .
@@ -65,8 +67,22 @@ services:
     volumes:
       - ./data:/app/data
       - ./skills:/app/skills
-      # Local dev: edit JS/CSS without rebuild. The Dockerfile already bakes static files for prod.
+      # NOTE: app/static is mounted for local frontend development.
+      # For production builds remove this mount so the baked-in static files are used.
       - ./app/static:/app/static
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
 volumes:
   mysql-data:

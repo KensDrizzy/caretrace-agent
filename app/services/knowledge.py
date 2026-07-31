@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from typing import Hashable
 
 from pypdf import PdfReader
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -43,17 +45,21 @@ class KnowledgeService:
         return self.db.query(KnowledgeChunk).count()
 
     def ensure_source(self, source: str, content: str) -> int:
-        chunks = chunk_text(content, self.settings.knowledge_chunk_size, self.settings.knowledge_chunk_overlap)
-        existing = [
-            chunk.content
-            for chunk in self.db.query(KnowledgeChunk)
+        content_hash = _hash_content(content)
+        # Fast path: if the source hash matches, the document is unchanged.
+        stored_hash = (
+            self.db.query(KnowledgeChunk.content_hash)
             .filter(KnowledgeChunk.source == source)
-            .order_by(KnowledgeChunk.source_index.asc())
-            .all()
-        ]
-        if existing == chunks:
-            return len(existing)
-        return self.ingest(source, content)
+            .limit(1)
+            .scalar()
+        )
+        if stored_hash == content_hash:
+            return (
+                self.db.query(KnowledgeChunk)
+                .filter(KnowledgeChunk.source == source)
+                .count()
+            )
+        return self.ingest(source, content, content_hash)
 
     def status(self) -> dict:
         vector_chunks = None
@@ -102,13 +108,14 @@ class KnowledgeService:
             raise RuntimeError("Chroma 持久化目录不存在，无法生成快照")
         return snapshot
 
-    def ingest(self, source: str, content: str) -> int:
+    def ingest(self, source: str, content: str, content_hash: str | None = None) -> int:
+        content_hash = content_hash or _hash_content(content)
         chunks = chunk_text(content, self.settings.knowledge_chunk_size, self.settings.knowledge_chunk_overlap)
         self._delete_vector_source(source)
         self.db.query(KnowledgeChunk).filter(KnowledgeChunk.source == source).delete()
         rows = []
         for index, chunk in enumerate(chunks):
-            row = KnowledgeChunk(source=source, source_index=index, content=chunk)
+            row = KnowledgeChunk(source=source, source_index=index, content=chunk, content_hash=content_hash)
             self.db.add(row)
             rows.append(row)
         self.db.flush()
@@ -127,18 +134,19 @@ class KnowledgeService:
     def retrieve(self, query: str, top_k: int | None = None) -> list[SearchResult]:
         top_k = top_k or self.settings.knowledge_top_k
         candidate_k = self._candidate_k(top_k)
-        chunks = self.db.query(KnowledgeChunk).all()
-        # Primary retrieval now uses hybrid recall: semantic vector candidates
-        # plus BM25 keyword candidates, followed by deterministic local rerank.
+        # Primary retrieval uses hybrid recall: semantic vector candidates plus
+        # BM25 keyword candidates, followed by deterministic local rerank.
+        # BM25 now works on a keyword-pre-filtered candidate set instead of the
+        # full table, keeping latency flat as the knowledge base grows.
         vector_results = self._retrieve_vector(query, candidate_k)
-        bm25_results = self._retrieve_bm25(query, candidate_k, chunks)
+        bm25_results = self._retrieve_bm25(query, candidate_k)
         ranked = self._fuse_and_rerank(query, vector_results, bm25_results, top_k)
         if ranked:
             return self._expand_best(ranked, top_k)
         return []
 
-    def _retrieve_bm25(self, query: str, top_k: int, chunks: list[KnowledgeChunk] | None = None) -> list[SearchResult]:
-        chunks = chunks if chunks is not None else self.db.query(KnowledgeChunk).all()
+    def _retrieve_bm25(self, query: str, top_k: int) -> list[SearchResult]:
+        chunks = self._fetch_bm25_candidates(query)
         scores = bm25_scores(query, chunks)
         ranked = [
             SearchResult(chunk.id, chunk.source, chunk.content, scores.get(chunk.id, 0.0))
@@ -147,6 +155,21 @@ class KnowledgeService:
         ]
         ranked.sort(key=lambda item: item.score, reverse=True)
         return ranked[:top_k]
+
+    def _fetch_bm25_candidates(self, query: str) -> list[KnowledgeChunk]:
+        """Return a bounded set of chunks that contain at least one query term.
+
+        Falls back to the newest chunks when no textual terms are present.
+        """
+        max_docs = max(50, self.settings.knowledge_bm25_max_docs)
+        terms = _bm25_query_terms(query)
+        q = self.db.query(KnowledgeChunk)
+        if terms:
+            q = q.filter(or_(*(KnowledgeChunk.content.ilike(f"%{term}%") for term in terms)))
+        else:
+            # No textual terms to pre-filter; fall back to the most recent chunks.
+            q = q.order_by(KnowledgeChunk.id.desc())
+        return q.limit(max_docs).all()
 
     def _fuse_and_rerank(
         self,
@@ -231,11 +254,11 @@ class KnowledgeService:
         rows = self.db.query(KnowledgeChunk).order_by(KnowledgeChunk.source.asc(), KnowledgeChunk.source_index.asc()).all()
         if not rows:
             return
-        if (
-            self.vector_store.count() == len(rows)
-            and all(row.embedding_json for row in rows)
-            and self.vector_store.has_exact_chunk_ids(rows)
-        ):
+        # Fast path: if counts match and every DB row already has a cached
+        # embedding, assume the vector collection is in sync. The expensive
+        # exact-ID check is skipped here; use rebuild_vector_index() to force
+        # a full consistency repair when needed.
+        if self.vector_store.count() == len(rows) and all(row.embedding_json for row in rows):
             return
         self._sync_vector_chunks(rows)
         self.db.commit()
@@ -475,6 +498,24 @@ def keyword_score(query: str, content: str) -> float:
     lower = content.lower()
     matched = sum(1 for term in terms if term in lower)
     return min(1.0, matched / len(terms))
+
+
+def _bm25_query_terms(query: str) -> list[str]:
+    """Extract searchable terms for the BM25 candidate pre-filter."""
+    terms = [term for term in re.split(r"[\s，。！？、；：,.!?;:]+", query.lower()) if len(term) >= 2]
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            unique.append(term)
+    return unique
+
+
+def _hash_content(content: str) -> str:
+    """Return a stable hash for the full source document."""
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def counts(values: list[str]) -> dict[str, int]:

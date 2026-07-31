@@ -1,0 +1,21 @@
+# Development overrides for docker compose up
+# This file is automatically merged by Docker Compose when present.
+# It mounts the local app directory for backend hot-reload and enables Uvicorn reload.
+
+services:
+  app:
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+      - ./skills:/app/skills
+      - ./app/static:/app/static
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --reload
+      - --reload-dir
+      - /app/app

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -23,8 +24,10 @@ class ChatService:
         self.agent_harness = MindBridgeAgentHarness(db, settings)
 
     async def stream_chat(self, user: UserAccount, request: ChatRequest):
+        # The agent runtime is synchronous and may perform blocking LLM/DB calls.
+        # Run it in the default thread pool so the ASGI event loop stays responsive.
         try:
-            outcome = self.agent_harness.run(user, request)
+            outcome = await asyncio.to_thread(self.agent_harness.run, user, request)
         except ModelNotFoundError:
             yield sse("error", ChatStreamEvent(type="error", sessionId=request.sessionId, message="模型未找到，请检查模型是否已加载或运行 create-finetuned-model.sh").model_dump(by_alias=True))
             return

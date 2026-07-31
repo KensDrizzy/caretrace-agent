@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     knowledge_rerank_enabled: bool = True
     knowledge_vector_enabled: bool = True
     knowledge_vector_required: bool = False
+    knowledge_bm25_max_docs: int = 500
     chroma_persist_dir: str = "data/chroma"
     chroma_collection_name: str = "mindbridge_knowledge"
     chroma_snapshot_dir: str = "data/chroma-snapshots"

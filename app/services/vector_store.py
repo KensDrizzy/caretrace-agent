@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from app.core.config import Settings
+from app.core.http_client import get_sync_client
 from app.models.entities import KnowledgeChunk
 
 
@@ -148,7 +149,7 @@ class ChromaKnowledgeStore:
             "input": [text if text.strip() else " " for text in texts],
         }
         headers = {"Authorization": f"Bearer {self.settings.openai_api_key}"}
-        response = httpx.post(
+        response = get_sync_client(self.settings).post(
             f"{self.settings.openai_base_url}/embeddings",
             headers=headers,
             json=payload,

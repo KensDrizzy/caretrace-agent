@@ -7,6 +7,7 @@ import httpx
 
 from app.core.config import Settings
 from app.core.enums import IntentType, RiskLevel
+from app.core.http_client import get_async_client, get_sync_client
 from app.schemas.dtos import AiMessage
 
 
@@ -109,7 +110,7 @@ class AiClient:
             "options": {"temperature": self.settings.ai_temperature, "num_predict": self.settings.ai_max_tokens},
         }
         try:
-            response = httpx.post(f"{self.settings.ollama_base_url}/api/chat", json=payload, timeout=60)
+            response = get_sync_client(self.settings).post(f"{self.settings.ollama_base_url}/api/chat", json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError("模型服务响应超时，请稍后重试") from exc
@@ -129,16 +130,15 @@ class AiClient:
             "options": {"temperature": self.settings.ai_temperature, "num_predict": self.settings.ai_max_tokens},
         }
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                async with client.stream("POST", f"{self.settings.ollama_base_url}/api/chat", json=payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line:
-                            continue
-                        data = json.loads(line)
-                        token = data.get("message", {}).get("content", "")
-                        if token:
-                            yield token
+            async with get_async_client(self.settings).stream("POST", f"{self.settings.ollama_base_url}/api/chat", json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    data = json.loads(line)
+                    token = data.get("message", {}).get("content", "")
+                    if token:
+                        yield token
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError("模型服务响应超时，请稍后重试") from exc
         except httpx.ConnectError as exc:
@@ -158,7 +158,7 @@ class AiClient:
             "stream": stream,
         }
         try:
-            response = httpx.post(f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload, timeout=60)
+            response = get_sync_client(self.settings).post(f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError("模型服务响应超时，请稍后重试") from exc
@@ -180,19 +180,18 @@ class AiClient:
             "stream": True,
         }
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
-                async with client.stream("POST", f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        raw = line.removeprefix("data: ").strip()
-                        if raw == "[DONE]":
-                            break
-                        data = json.loads(raw)
-                        token = data["choices"][0].get("delta", {}).get("content", "")
-                        if token:
-                            yield token
+            async with get_async_client(self.settings).stream("POST", f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line.removeprefix("data: ").strip()
+                    if raw == "[DONE]":
+                        break
+                    data = json.loads(raw)
+                    token = data["choices"][0].get("delta", {}).get("content", "")
+                    if token:
+                        yield token
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError("模型服务响应超时，请稍后重试") from exc
         except httpx.ConnectError as exc:
