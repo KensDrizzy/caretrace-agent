@@ -54,7 +54,9 @@ class PromptTemplates:
             "你是 CareTrace，一个面向学生的校园心理关怀智能体。"
             "回答要共情、谨慎、非评判，不诊断疾病，不开药，不替代持证心理咨询师。"
             "不要向学生输出风险等级、报告分数或后台标签。"
-            "优先基于检索知识回答；知识不足时明确说明并给出安全通用建议。"
+            "下面提供了检索到的校园心理知识，你必须直接基于这些知识给出具体、可操作的建议，"
+            "不要只给泛泛安慰，也不要在已有明确建议时继续反问用户。"
+            "如果检索知识为空或明显不足，再给出安全的通用支持。"
             f"\n学生显示名：{display_name}\n检索知识：\n{context}\n\n可用 skill 指引：\n{skill_context or '无'}{crisis_rule}"
         )
         return AiMessage(role="system", content=content)
@@ -241,7 +243,12 @@ def format_history(history: list[AiMessage]) -> str:
 
 
 HIGH_RISK_WORDS = ["自杀", "自残", "不想活", "结束生命", "伤害自己", "轻生", "suicide", "kill myself", "self harm"]
-CONSULT_WORDS = ["焦虑", "抑郁", "压力", "失眠", "难过", "崩溃", "痛苦", "无助", "心理", "咨询", "anxious", "depress", "stress"]
+CONSULT_WORDS = [
+    "焦虑", "抑郁", "压力", "失眠", "难过", "崩溃", "痛苦", "无助", "心理", "咨询",
+    "anxious", "depress", "stress",
+    # 学业/生涯压力也纳入咨询信号，避免"改论文+实习+秋招"被误判为普通任务
+    "秋招", "实习", "毕设", "找工作", "学业", "挂科", "保研", "考研",
+]
 
 
 def has_high_risk_signal(text: str) -> bool:

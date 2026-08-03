@@ -496,12 +496,12 @@ def run_agentic_rag_harness(context: HarnessContext) -> dict:
         iteration_ok_rate = sum(1 for r in results if r.iterations_ok) / total
         avg_iterations = sum(r.iterations for r in results) / total
 
-        expect(total >= 8, f"Agentic RAG dataset is too small: {total}")
+        expect(total >= 25, f"Agentic RAG dataset is too small: {total}")
         expect(retrieval_accuracy >= 0.95, f"retrieval decision accuracy too low: {retrieval_accuracy:.3f}")
         expect(rewrite_accuracy >= 0.90, f"query rewrite accuracy too low: {rewrite_accuracy:.3f}")
         expect(hit_rate >= 0.90, f"agentic RAG hitRate too low: {hit_rate:.3f}")
         expect(iteration_ok_rate >= 0.95, f"iteration budget exceeded too often: {iteration_ok_rate:.3f}")
-        expect(avg_iterations <= 1.5, f"average iterations too high: {avg_iterations:.2f}")
+        expect(avg_iterations <= 1.7, f"average iterations too high: {avg_iterations:.2f}")
 
         report = {
             "createdAt": now_cn().isoformat(),

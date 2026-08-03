@@ -182,6 +182,9 @@ class UnderstandingAgent(BaseAutonomousAgent):
             if "CONSULT" in label:
                 return IntentType.CONSULT
             if "CHAT" in label:
+                # 当本地模型把明显的心理求助信号误判为闲聊时，用规则兜底
+                if has_consult_signal(lowered):
+                    return IntentType.CONSULT
                 return IntentType.CHAT
         except Exception:
             pass
@@ -332,10 +335,14 @@ class ContextAgent(BaseAutonomousAgent):
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
         if board.latest_artifact("context"):
             return AgentDecision(False, reason="context artifact already exists")
-        risk = _risk_level(board)
-        intent = _intent(board)
         if AgentCapability.CONTEXT.value in task.required_capabilities:
             return AgentDecision(True, 0.86, "task explicitly asks for context")
+        # Don't claim the root task based only on keyword signals before UnderstandingAgent
+        # has published an intent artifact; wait for the coordinator to create a context task.
+        if task.metadata.get("kind") == "root" and board.latest_artifact("intent") is None:
+            return AgentDecision(False, reason="waiting for intent artifact before claiming root task")
+        risk = _risk_level(board)
+        intent = _intent(board)
         if risk in {RiskLevel.MEDIUM, RiskLevel.HIGH} or intent in {IntentType.CONSULT, IntentType.RISK}:
             return AgentDecision(True, 0.82, "support path needs memory, RAG, and skill context")
         return AgentDecision(False, reason="context not necessary for current artifacts")
