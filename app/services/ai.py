@@ -222,6 +222,11 @@ class AiClient:
             return "我听到你最近压力很大，还影响到了睡眠，这种状态确实会让人很消耗。你可以先做两件小事：今晚把最担心的事情写成清单，先只选一个最小步骤处理；睡前 30 分钟把手机和学习任务放远一点，用缓慢呼吸或热水澡帮身体降下来。如果这种失眠持续一周以上，建议联系学校心理中心或辅导员一起看一看。"
         if "当前由 ResponseAgent 以 normal_chat mode" in system:
             return "我在。这个问题可以直接拆开来看，我们先从你最想解决的那一部分开始。"
+        if "ContextAgent" in system and "只输出查询词" in system:
+            if "当前输入：" in last:
+                current = last.split("当前输入：")[-1].strip().split("\n")[0].strip()
+                return _mock_rewrite_query(current)
+            return _mock_rewrite_query(last)
         if "ContextAgent" in system and "SUFFICIENT" in system:
             return "SUFFICIENT"
         if "ContextAgent" in system:
@@ -252,3 +257,29 @@ def has_consult_signal(text: str) -> bool:
 def split_text(text: str, size: int) -> Iterable[str]:
     for index in range(0, len(text), size):
         yield text[index:index + size]
+
+
+def _mock_rewrite_query(current: str) -> str:
+    """Deterministic query rewrite used by the mock provider in tests.
+
+    Mirrors a real LLM rewrite by expanding common synonyms so that the
+    rewritten query is more likely to hit the knowledge base.
+    """
+    current = current.strip() or "校园心理支持"
+    expansions = [
+        ("睡不着", "失眠"),
+        ("失眠", "睡不着"),
+        ("心跳", "呼吸"),
+        ("喘不过气", "呼吸"),
+        ("想伤害自己", "自杀"),
+        ("自杀", "自伤"),
+    ]
+    extras: list[str] = []
+    for trigger, keyword in expansions:
+        if trigger in current and keyword not in current and keyword not in extras:
+            extras.append(keyword)
+    if extras:
+        query = f"{current} {' '.join(extras)}"
+    else:
+        query = current
+    return query[:60]

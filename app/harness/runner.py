@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--suite",
         action="append",
-        choices=["risk", "routing", "skills", "rag", "api", "tool-queue", "all"],
+        choices=["risk", "routing", "skills", "rag", "agentic-rag", "api", "tool-queue", "all"],
         default=None,
         help="Harness suite to run. Can be supplied multiple times.",
     )
@@ -177,6 +177,7 @@ def resolve_suites(requested: list[str] | None) -> list[tuple[str, Callable[[Har
         ("Agent Routing Harness", run_agent_routing_harness),
         ("Standard Skills Harness", run_standard_skills_harness),
         ("RAG Harness", run_rag_harness),
+        ("Agentic RAG Harness", run_agentic_rag_harness),
         ("API Harness", run_api_harness),
         ("Tool Queue Harness", run_tool_queue_harness),
     ]
@@ -188,6 +189,7 @@ def resolve_suites(requested: list[str] | None) -> list[tuple[str, Callable[[Har
         "routing": "Agent Routing Harness",
         "skills": "Standard Skills Harness",
         "rag": "RAG Harness",
+        "agentic-rag": "Agentic RAG Harness",
         "api": "API Harness",
         "tool-queue": "Tool Queue Harness",
     }
@@ -460,6 +462,77 @@ def run_rag_harness(context: HarnessContext) -> dict:
         output = context.target_dir / "rag-eval-report.json"
         output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         return metrics | {"report": str(output)}
+    finally:
+        db.close()
+
+
+def run_agentic_rag_harness(context: HarnessContext) -> dict:
+    from app.rag_eval.agentic_runner import (
+        ContextAgent,
+        _build_services,
+        _evaluate_case,
+    )
+    from app.models.entities import ChatSession, UserAccount
+
+    db = context.session()
+    try:
+        user = db.query(UserAccount).filter(UserAccount.username == "student").one()
+        session = ChatSession(public_id="agentic-rag-harness-session", user_id=user.id, title="agentic-rag-harness")
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+        services = _build_services(db, context.settings, user, session)
+        agent = ContextAgent(services)
+
+        dataset_path = context.root / context.settings.agentic_rag_eval_dataset
+        cases = json.loads(dataset_path.read_text(encoding="utf-8"))
+        results = [_evaluate_case(agent, case) for case in cases]
+
+        total = max(1, len(results))
+        retrieval_accuracy = sum(1 for r in results if r.retrieval_decision_correct) / total
+        rewrite_accuracy = sum(1 for r in results if r.rewrite_correct) / total
+        hit_rate = sum(1 for r in results if r.hit) / total
+        iteration_ok_rate = sum(1 for r in results if r.iterations_ok) / total
+        avg_iterations = sum(r.iterations for r in results) / total
+
+        expect(total >= 8, f"Agentic RAG dataset is too small: {total}")
+        expect(retrieval_accuracy >= 0.95, f"retrieval decision accuracy too low: {retrieval_accuracy:.3f}")
+        expect(rewrite_accuracy >= 0.90, f"query rewrite accuracy too low: {rewrite_accuracy:.3f}")
+        expect(hit_rate >= 0.90, f"agentic RAG hitRate too low: {hit_rate:.3f}")
+        expect(iteration_ok_rate >= 0.95, f"iteration budget exceeded too often: {iteration_ok_rate:.3f}")
+        expect(avg_iterations <= 1.5, f"average iterations too high: {avg_iterations:.2f}")
+
+        report = {
+            "createdAt": now_cn().isoformat(),
+            "metrics": {
+                "totalCases": total,
+                "retrievalDecisionAccuracy": retrieval_accuracy,
+                "rewriteAccuracy": rewrite_accuracy,
+                "hitRate": hit_rate,
+                "iterationOkRate": iteration_ok_rate,
+                "averageIterations": avg_iterations,
+            },
+            "results": [
+                {
+                    "id": r.id,
+                    "question": r.question,
+                    "requiresRetrieval": r.requires_retrieval,
+                    "didRetrieve": r.did_retrieve,
+                    "retrievalDecisionCorrect": r.retrieval_decision_correct,
+                    "rewrittenQuery": r.rewritten_query,
+                    "rewriteCorrect": r.rewrite_correct,
+                    "hit": r.hit,
+                    "iterations": r.iterations,
+                    "iterationsOk": r.iterations_ok,
+                    "failures": r.failures,
+                }
+                for r in results
+            ],
+        }
+        output = context.target_dir / "agentic-rag-eval-report.json"
+        output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        return report["metrics"] | {"report": str(output)}
     finally:
         db.close()
 

@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     rag_eval_output: str = "target/rag-eval-report.json"
     rag_eval_enabled: bool = False
     rag_eval_exit_after_run: bool = False
+    agentic_rag_enabled: bool = True
+    agentic_rag_max_iterations: int = 2
+    agentic_rag_sufficiency_threshold: float = 0.7
+    agentic_rag_eval_dataset: str = "app/rag_eval/mindbridge-agentic-rag-eval.json"
+    agentic_rag_eval_output: str = "target/agentic-rag-eval-report.json"
     excel_path: str = "data/caretrace-risk-ledger.xlsx"
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_memory_ttl_seconds: int = 86400

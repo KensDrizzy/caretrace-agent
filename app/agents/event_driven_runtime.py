@@ -30,6 +30,7 @@ from app.services.knowledge import KnowledgeService, SearchResult
 from app.services.memory import RedisShortTermMemoryStore
 
 
+# 这是真正的 事件驱动多 Agent 运行时。一次调用会走完一整轮 Agent 协作流程，
 class EventDrivenAgentRuntimeService:
     """Actor-style multi-agent runtime.
 
@@ -50,6 +51,8 @@ class EventDrivenAgentRuntimeService:
         self.private_memory = AgentPrivateMemory(settings)
 
     def run(self, user: UserAccount, session: ChatSession, original_input: str, model_input: str) -> AgentRunResult:
+        # AgentRuntimeServices时共享服务包
+        # 把所有外部依赖（数据库、AI 客户端、记忆、知识库、模型注册表）打包，后续各 Agent 共用。
         services = AgentRuntimeServices(
             db=self.db,
             settings=self.settings,
@@ -61,6 +64,12 @@ class EventDrivenAgentRuntimeService:
             private_memory=self.private_memory,
             knowledge=self.knowledge,
         )
+        # 创建agent
+        # CoordinatorAgent：总协调者，负责任务分解、调度、最终采纳。
+        # UnderstandingAgent：理解用户意图。
+        # SafetyAgent：安全/风险评估。
+        # ContextAgent：检索记忆和知识库。
+        # ResponseAgent：生成候选回复。
         coordinator_agent = CoordinatorAgent(services)
         agents = [
             UnderstandingAgent(services),
@@ -68,6 +77,8 @@ class EventDrivenAgentRuntimeService:
             ContextAgent(services),
             ResponseAgent(services),
         ]
+        # 创建协作黑板
+        # 黑板是本轮协作的共享状态中心，所有 Agent 都在上面发布事件、任务、artifact（中间产物）。
         board = CollaborationBlackboard(
             turn_id=uuid.uuid4().hex,
             user_id=user.id,
@@ -75,6 +86,7 @@ class EventDrivenAgentRuntimeService:
             user_input=original_input,
             model_input=model_input,
         )
+        # 发布开始事件
         board = board.append_event(
             AgentEvent(
                 type=AgentEventType.TURN_STARTED,
@@ -82,6 +94,9 @@ class EventDrivenAgentRuntimeService:
                 message="user turn published to shared task board",
             )
         )
+        # 启动协调器运行多 Agent 循环
+        # AgentRegistry：管理所有业务 Agent。
+        # EventDrivenCoordinator：实际的调度循环引擎。它会反复让 Agent 认领任务、执行、发布事件，直到产生被采纳的最终回复或达到最大步数（max_steps = 8）。
         registry = AgentRegistry(agents)
         final_board = EventDrivenCoordinator(registry, coordinator_agent, self.settings).run(board)
         return self._to_result(final_board, user)

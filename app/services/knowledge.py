@@ -501,8 +501,8 @@ def keyword_score(query: str, content: str) -> float:
 
 
 def _bm25_query_terms(query: str) -> list[str]:
-    """Extract searchable terms for the BM25 candidate pre-filter."""
-    terms = [term for term in re.split(r"[\s，。！？、；：,.!?;:]+", query.lower()) if len(term) >= 2]
+    """Extract searchable terms for the BM25 candidate pre-filter (tokenized)."""
+    terms = [term for term in tokenize(query) if len(term) >= 2]
     # Deduplicate while preserving order.
     seen: set[str] = set()
     unique: list[str] = []

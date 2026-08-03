@@ -37,6 +37,7 @@ GENERAL_TASK_WORDS = [
 ]
 
 
+# 所有 Agent 共享的服务包
 @dataclass
 class AgentRuntimeServices:
     db: Session
@@ -50,6 +51,7 @@ class AgentRuntimeServices:
     knowledge: KnowledgeService
 
 
+# 每个agent独立的记忆隔离层，每个 Agent 只能读写自己的私有记忆
 class AgentPrivateMemory:
     """Per-agent memory facade backed by isolated Redis keys."""
 
@@ -67,6 +69,11 @@ class AgentPrivateMemory:
     def _key(self, agent_name: str, session_public_id: str) -> str:
         return f"agent:{agent_name}:{session_public_id}"
 
+# 所有业务 Agent 的基类，提供：
+# name：从 AgentProfile 读取
+# client()：获取当前 Agent 专属的 AI 模型客户端
+# private_memory() / remember()：读写私有记忆
+# _artifact()：生成 artifact 对象，ID 格式为 {agent}:{kind}:{uuid}
 
 class BaseAutonomousAgent:
     profile: AgentProfile
@@ -109,16 +116,18 @@ class BaseAutonomousAgent:
 class UnderstandingAgent(BaseAutonomousAgent):
     profile = AgentProfile(
         name="UnderstandingAgent",
-        capabilities=frozenset({AgentCapability.UNDERSTANDING}),
+        capabilities=frozenset({AgentCapability.UNDERSTANDING}), # frozenset 就是不可变的集合，意思是“我的能力范围写死了，不能临时加戏”。
         system_prompt=(
             "你是 UnderstandingAgent。你只负责理解用户当前请求，输出意图、主题、置信度和理由，"
             "不生成最终回复，不做风险处置。"
         ),
         memory_policy="private_intent_history",
         model_profile="understanding",
-        tool_permissions=frozenset({"llm.intent"}),
+        tool_permissions=frozenset({"llm.intent"}), # 这个 Agent 被允许调用的工具白名单。这里只给了 llm.intent，意思是“只能调用意图分类相关的能力”，不能去查数据库或发邮件。
     )
 
+    # 如果黑板上已有 intent artifact，不再重复生成
+    # 如果当前任务是需要理解的 root/understanding 任务，或任务明确要求 UNDERSTANDING 能力，则认领
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
         if board.latest_artifact("intent"):
             return AgentDecision(False, reason="intent artifact already exists")
@@ -345,9 +354,9 @@ class ContextAgent(BaseAutonomousAgent):
         retrieved: list["SearchResult"] = []
         query = ""
         skill_context = ""
+        iterations = 0
         if intent != IntentType.CHAT or risk != RiskLevel.LOW:
-            query = self._rewrite_query(memory_brief, board.model_input)
-            retrieved = self.services.knowledge.retrieve(query, self.services.settings.knowledge_top_k)
+            query, retrieved, iterations = self._iterative_retrieve(memory_brief, board.model_input)
             skill_context = MindBridgeSkillLibrary.response_skill_context(intent, risk, board.user_input)
         payload = {
             "memoryBrief": memory_brief,
@@ -355,9 +364,10 @@ class ContextAgent(BaseAutonomousAgent):
             "knowledgeQuery": query,
             "retrievedKnowledge": retrieved,
             "skillContext": skill_context,
+            "agenticRagIterations": iterations,
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
-        self.remember(f"context intent={intent.value}; risk={risk.value}; retrieved={len(retrieved)}")
+        self.remember(f"context intent={intent.value}; risk={risk.value}; retrieved={len(retrieved)}; ragIterations={iterations}")
         return AgentTurnResult(
             artifacts=(self._artifact("context", payload, task, 0.88),),
             messages=(
@@ -413,6 +423,100 @@ class ContextAgent(BaseAutonomousAgent):
             return summary[:max_chars] or fallback
         except Exception:
             return fallback or "无相关历史记忆。"
+
+    def _iterative_retrieve(self, memory_brief: str, model_input: str) -> tuple[str, list["SearchResult"], int]:
+        """Agentic RAG: rewrite query, retrieve, evaluate sufficiency, and iterate if needed."""
+        settings = self.services.settings
+        top_k = settings.knowledge_top_k
+        max_iterations = max(1, settings.agentic_rag_max_iterations)
+
+        if not settings.agentic_rag_enabled:
+            query = self._rewrite_query(memory_brief, model_input)
+            return query, self.services.knowledge.retrieve(query, top_k), 1
+
+        current_query = self._rewrite_query(memory_brief, model_input)
+        all_results: list["SearchResult"] = []
+        seen_keys: set[tuple[str, str]] = set()
+        query = current_query
+
+        for iteration in range(1, max_iterations + 1):
+            batch = self.services.knowledge.retrieve(current_query, top_k)
+            for item in batch:
+                key = (item.source, item.content)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    all_results.append(item)
+
+            if self._is_sufficient(model_input, all_results):
+                return current_query, self._rank_dedup_results(all_results, top_k), iteration
+
+            if iteration < max_iterations:
+                current_query = self._rewrite_for_gap(memory_brief, model_input, all_results)
+                if not current_query or current_query == query:
+                    break
+                query = current_query
+
+        return query, self._rank_dedup_results(all_results, top_k), max_iterations
+
+    def _is_sufficient(self, model_input: str, results: list["SearchResult"]) -> bool:
+        """Heuristic sufficiency check before paying for an LLM judgment."""
+        if not results:
+            return False
+        threshold = max(0.0, min(1.0, self.services.settings.agentic_rag_sufficiency_threshold))
+        query_terms = set(self._extract_terms(model_input))
+        if not query_terms:
+            return len(results) > 0
+
+        best_coverage = 0.0
+        for item in results:
+            item_terms = set(self._extract_terms(item.content))
+            if item_terms:
+                coverage = len(query_terms & item_terms) / len(query_terms)
+                best_coverage = max(best_coverage, coverage)
+            if best_coverage >= threshold:
+                return True
+        return best_coverage >= threshold
+
+    def _rewrite_for_gap(self, memory_brief: str, model_input: str, results: list["SearchResult"]) -> str:
+        """Ask the model to rewrite query focusing on information still missing."""
+        try:
+            context_preview = "\n".join(
+                f"- [{item.source}] {item.content[:120]}"
+                for item in results[:3]
+            )
+            query = self.client().complete([
+                AiMessage(role="system", content=(
+                    f"{self.profile.system_prompt}\n"
+                    "你已经检索到一些资料，但还不够回答学生问题。"
+                    "请根据已有资料和原问题，改写出一个更聚焦缺失信息的检索查询词，只输出查询词。"
+                )),
+                AiMessage(role="user", content=(
+                    f"记忆摘要：\n{memory_brief}\n\n"
+                    f"当前输入：\n{model_input}\n\n"
+                    f"已有资料：\n{context_preview}"
+                )),
+            ]).strip()
+            return (query or model_input)[:60]
+        except Exception:
+            return model_input[:60]
+
+    def _rank_dedup_results(self, results: list["SearchResult"], top_k: int) -> list["SearchResult"]:
+        """Sort by score descending and return top-k unique results."""
+        ranked = sorted(results, key=lambda item: item.score, reverse=True)
+        seen: set[int | None] = set()
+        output: list["SearchResult"] = []
+        for item in ranked:
+            if item.chunk_id not in seen:
+                seen.add(item.chunk_id)
+                output.append(item)
+            if len(output) >= top_k:
+                break
+        return output
+
+    def _extract_terms(self, text: str) -> list[str]:
+        """Extract searchable terms from text for coverage estimation."""
+        from app.services.knowledge import tokenize
+        return tokenize(text)
 
     def _bounded_model_history(self, history: list[AiMessage]) -> list[AiMessage]:
         limit = max(2, self.services.settings.chat_history_limit * 2)
