@@ -45,6 +45,8 @@ class AgentModelRegistry:
         settings.ai_max_tokens = profile.max_tokens
         if profile.provider == "openai":
             settings.openai_model = profile.model
+        elif profile.provider == "deepseek":
+            settings.deepseek_model = profile.model
         else:
             settings.ollama_model = profile.model
         return AiClient(settings)
@@ -64,6 +66,8 @@ class AgentModelRegistry:
             return configured
         if provider == "openai":
             return getattr(self.settings, "openai_model", "gpt-4o-mini")
+        if provider == "deepseek":
+            return getattr(self.settings, "deepseek_model", "deepseek-v4-flash")
         if provider == "ollama":
             return getattr(self.settings, "ollama_model", "mindbridge-qwen2.5-7b-ft:latest")
         return "mock"

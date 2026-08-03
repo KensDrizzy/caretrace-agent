@@ -86,8 +86,8 @@ class AiClient:
         provider = self.settings.ai_provider.lower()
         if provider == "ollama":
             return self._ollama(messages, stream=False)
-        if provider == "openai":
-            return self._openai(messages, stream=False)
+        if provider in {"openai", "deepseek"}:
+            return self._openai(messages, stream=False, use_deepseek=provider == "deepseek")
         return self._mock(messages)
 
     async def stream(self, messages: list[AiMessage]):
@@ -96,8 +96,8 @@ class AiClient:
             async for token in self._ollama_stream(messages):
                 yield token
             return
-        if provider == "openai":
-            async for token in self._openai_stream(messages):
+        if provider in {"openai", "deepseek"}:
+            async for token in self._openai_stream(messages, use_deepseek=provider == "deepseek"):
                 yield token
             return
         text = self._mock(messages)
@@ -150,17 +150,20 @@ class AiClient:
                 raise ModelNotFoundError(f"模型未找到：{self.settings.ollama_model}。请运行 create-finetuned-model.sh 或检查 Ollama 模型列表。") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
 
-    def _openai(self, messages: list[AiMessage], stream: bool) -> str:
-        headers = {"Authorization": f"Bearer {self.settings.openai_api_key}"}
+    def _openai(self, messages: list[AiMessage], stream: bool, use_deepseek: bool = False) -> str:
+        base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url
+        api_key = self.settings.deepseek_api_key if use_deepseek else self.settings.openai_api_key
+        model = self.settings.deepseek_model if use_deepseek else self.settings.openai_model
+        headers = {"Authorization": f"Bearer {api_key}"}
         payload = {
-            "model": self.settings.openai_model,
+            "model": model,
             "messages": [m.model_dump() for m in messages],
             "temperature": self.settings.ai_temperature,
             "max_tokens": self.settings.ai_max_tokens,
             "stream": stream,
         }
         try:
-            response = get_sync_client(self.settings).post(f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload)
+            response = get_sync_client(self.settings).post(f"{base_url}/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise ModelTimeoutError("模型服务响应超时，请稍后重试") from exc
@@ -168,21 +171,24 @@ class AiClient:
             raise ModelConnectionError("无法连接到模型服务，请检查网络或 API 地址") from exc
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                raise ModelNotFoundError(f"模型未找到：{self.settings.openai_model}") from exc
+                raise ModelNotFoundError(f"模型未找到：{model}") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
         return response.json()["choices"][0]["message"]["content"]
 
-    async def _openai_stream(self, messages: list[AiMessage]):
-        headers = {"Authorization": f"Bearer {self.settings.openai_api_key}"}
+    async def _openai_stream(self, messages: list[AiMessage], use_deepseek: bool = False):
+        base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url
+        api_key = self.settings.deepseek_api_key if use_deepseek else self.settings.openai_api_key
+        model = self.settings.deepseek_model if use_deepseek else self.settings.openai_model
+        headers = {"Authorization": f"Bearer {api_key}"}
         payload = {
-            "model": self.settings.openai_model,
+            "model": model,
             "messages": [m.model_dump() for m in messages],
             "temperature": self.settings.ai_temperature,
             "max_tokens": self.settings.ai_max_tokens,
             "stream": True,
         }
         try:
-            async with get_async_client(self.settings).stream("POST", f"{self.settings.openai_base_url}/chat/completions", headers=headers, json=payload) as response:
+            async with get_async_client(self.settings).stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data: "):
@@ -200,7 +206,7 @@ class AiClient:
             raise ModelConnectionError("无法连接到模型服务，请检查网络或 API 地址") from exc
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
-                raise ModelNotFoundError(f"模型未找到：{self.settings.openai_model}") from exc
+                raise ModelNotFoundError(f"模型未找到：{model}") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
 
     def _mock(self, messages: list[AiMessage]) -> str:
