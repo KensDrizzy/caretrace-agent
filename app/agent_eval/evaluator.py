@@ -143,7 +143,7 @@ class AgentTraceEvaluator:
     @staticmethod
     def _result_dict(evaluated: EvaluatedTrace) -> dict[str, Any]:
         return {
-            "trace_id": evaluated.trace_id,
+            "trace_id": evaluated.trace_id or evaluated.session_id,
             "session_id": evaluated.session_id,
             "original_input": evaluated.original_input,
             "intent": evaluated.intent,
