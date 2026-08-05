@@ -51,12 +51,19 @@ async def chat_stream(
 def agent_status(user: Annotated[UserAccount, Depends(current_user)]):
     settings = get_settings()
     provider = settings.ai_provider.lower()
-    model = settings.ollama_model if provider == "ollama" else settings.openai_model if provider == "openai" else "mock"
+    if provider == "ollama":
+        model = settings.ollama_model
+    elif provider == "openai":
+        model = settings.openai_model
+    elif provider == "deepseek":
+        model = settings.deepseek_model
+    else:
+        model = "mock"
     framework = agent_framework_status(settings)
     return {
         "provider": provider,
         "model": model,
-        "realModelEnabled": provider in {"ollama", "openai"},
+        "realModelEnabled": provider in {"ollama", "openai", "deepseek"},
         "agentFramework": framework,
         "finetunedModel": finetuned_model_status(settings),
         "agents": [
