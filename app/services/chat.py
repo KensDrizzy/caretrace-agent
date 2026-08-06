@@ -10,7 +10,7 @@ from app.agents.harness import MindBridgeAgentHarness
 from app.core.config import Settings
 from app.models.entities import UserAccount
 from app.schemas.dtos import ChatRequest, ChatStreamEvent
-from app.services.ai import AiClient, AiError, ModelConnectionError, ModelNotFoundError, ModelTimeoutError
+from app.services.ai import AiClient, ModelConnectionError, ModelNotFoundError, ModelTimeoutError, split_text
 
 
 logger = logging.getLogger(__name__)
@@ -40,30 +40,19 @@ class ChatService:
             return
 
         yield sse("meta", ChatStreamEvent(type="meta", sessionId=outcome.session.public_id).model_dump(by_alias=True))
-        assistant = []
         try:
-            async for token in self.ai.stream(outcome.response_messages):
-                assistant.append(token)
-                yield sse("token", ChatStreamEvent(type="token", sessionId=outcome.session.public_id, content=token).model_dump())
-        except (ModelConnectionError, ModelTimeoutError):
-            yield sse("error", ChatStreamEvent(type="error", sessionId=outcome.session.public_id, message="模型连接中断，请稍后重试").model_dump())
-            return
-        except AiError:
-            logger.exception("Stream failed for session=%s", outcome.session.public_id)
-            yield sse("error", ChatStreamEvent(type="error", sessionId=outcome.session.public_id, message="模型响应出错，请稍后重试").model_dump())
-            return
-        if assistant:
-            self.agent_harness.save_assistant_message(user, outcome.session, "".join(assistant))
-        try:
-            await self.agent_harness.dispatch_tools(outcome.tool_plan)
+            # 直接发送 ResponseAgent 生成、SafetyAgent 审核过的同一份文本，不再调用模型
+            for chunk in split_text(outcome.final_response, 12):
+                yield sse("token", ChatStreamEvent(type="token", sessionId=outcome.session.public_id, content=chunk).model_dump())
+            if outcome.final_response:
+                self.agent_harness.save_assistant_message(user, outcome.session, outcome.final_response)
+            tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
         except Exception as exc:
-            logger.warning(
-                "Post-response tool dispatch failed for session=%s report_id=%s: %s",
-                outcome.session.public_id,
-                outcome.report_id,
-                exc,
-                exc_info=True,
-            )
+            logger.exception("Post-harness stage failed for session=%s", outcome.session.public_id)
+            self.agent_harness.finalize_trace(outcome, [], error=exc)
+            yield sse("error", ChatStreamEvent(type="error", sessionId=outcome.session.public_id, message="处理失败，请稍后再试").model_dump())
+            return
+        self.agent_harness.finalize_trace(outcome, tool_records)
         yield sse("done", ChatStreamEvent(type="done", sessionId=outcome.session.public_id).model_dump())
 
 

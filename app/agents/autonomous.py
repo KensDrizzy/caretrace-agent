@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
+import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
@@ -36,6 +38,11 @@ GENERAL_TASK_WORDS = [
     "怎么写", "如何", "是什么", "为什么", "给我", "帮我", "推荐", "查询", "天气", "路线",
 ]
 
+# SafetyAgent 结构化审核规则词表（只记录 reasonCode，不记录思维链）
+BOUNDARY_VIOLATION_WORDS = ["绝对保密", "我确诊你", "你患有"]
+SAFETY_GUIDANCE_WORDS = ["紧急", "可信任", "安全", "求助", "心理中心", "辅导员", "110", "120"]
+REVIEW_REASON_CODES = {"OK", "DISMISSIVE_TONE", "DIAGNOSTIC_CLAIM", "BOUNDARY_VIOLATION", "UNSAFE_CONTENT", "MISSING_SAFETY_GUIDANCE"}
+
 
 # 所有 Agent 共享的服务包
 @dataclass
@@ -49,6 +56,7 @@ class AgentRuntimeServices:
     memory: RedisShortTermMemoryStore
     private_memory: "AgentPrivateMemory"
     knowledge: KnowledgeService
+    llm_call_records: list = field(default_factory=list)
 
 
 # 每个agent独立的记忆隔离层，每个 Agent 只能读写自己的私有记忆
@@ -86,7 +94,10 @@ class BaseAutonomousAgent:
         return self.profile.name
 
     def client(self) -> AiClient:
-        return self.services.model_registry.client_for(self.name)
+        return self.services.model_registry.client_for(self.name, metrics_hook=self._llm_metrics_hook)
+
+    def _llm_metrics_hook(self, metrics) -> None:
+        self.services.llm_call_records.append({"actor": self.name, "metrics": metrics})
 
     def private_memory(self) -> list[AiMessage]:
         return self.services.private_memory.load(self.name, self.services.session.public_id)
@@ -130,10 +141,10 @@ class UnderstandingAgent(BaseAutonomousAgent):
     # 如果当前任务是需要理解的 root/understanding 任务，或任务明确要求 UNDERSTANDING 能力，则认领
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
         if board.latest_artifact("intent"):
-            return AgentDecision(False, reason="intent artifact already exists")
+            return AgentDecision(False, reason="intent artifact already exists", reason_code="INTENT_EXISTS")
         if self._is_directed(task, board):
-            return AgentDecision(True, 0.82, "open user-turn task needs understanding")
-        return AgentDecision(False, reason="task does not need understanding")
+            return AgentDecision(True, 0.82, "open user-turn task needs understanding", reason_code="UNDERSTANDING_REQUIRED")
+        return AgentDecision(False, reason="task does not need understanding", reason_code="UNDERSTANDING_NOT_REQUIRED")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         intent = self._classify(board.model_input or board.user_input, board)
@@ -215,21 +226,19 @@ class SafetyAgent(BaseAutonomousAgent):
     )
 
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
-        latest_response = board.latest_artifact("response_proposal")
-        latest_review = board.latest_artifact("safety_review")
-        if latest_response and (latest_review is None or latest_review.metadata.get("responseArtifactId") != latest_response.id):
-            return AgentDecision(True, 0.95, "candidate response needs safety critique")
+        latest_response = board.latest_artifact("response_candidate")
+        if latest_response and _latest_review_for(board, latest_response.id) is None:
+            return AgentDecision(True, 0.95, "candidate response needs safety critique", reason_code="REVIEW_REQUIRED")
         if not board.latest_artifact("risk") and board.user_input:
             confidence = 0.98 if has_high_risk_signal(board.user_input) else 0.84
-            return AgentDecision(True, confidence, "user input needs independent risk assessment")
+            return AgentDecision(True, confidence, "user input needs independent risk assessment", reason_code="RISK_ASSESSMENT_REQUIRED")
         if AgentCapability.SAFETY.value in task.required_capabilities:
-            return AgentDecision(True, 0.8, "task explicitly asks for safety")
-        return AgentDecision(False, reason="no safety work needed")
+            return AgentDecision(True, 0.8, "task explicitly asks for safety", reason_code="TASK_REQUIRES_SAFETY")
+        return AgentDecision(False, reason="no safety work needed", reason_code="NO_SAFETY_WORK")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
-        response = board.latest_artifact("response_proposal")
-        review = board.latest_artifact("safety_review")
-        if response and (review is None or review.metadata.get("responseArtifactId") != response.id):
+        response = board.latest_artifact("response_candidate")
+        if response and _latest_review_for(board, response.id) is None:
             return self._review_response(task, board, response)
         return self._assess_risk(task, board)
 
@@ -253,6 +262,7 @@ class SafetyAgent(BaseAutonomousAgent):
                     task_id=task.id,
                     message="RiskGuardian hard/LLM assessment raised this turn to HIGH",
                     metadata={"risk": RiskLevel.HIGH.value},
+                    round=board.current_round,
                 ),
             )
         self.remember(f"risk={assessment.risk.value}; summary={assessment.summary}")
@@ -273,50 +283,128 @@ class SafetyAgent(BaseAutonomousAgent):
 
     def _review_response(self, task: AgentTask, board: CollaborationBlackboard, response: AgentArtifact) -> AgentTurnResult:
         risk = _risk_level(board)
-        messages = response.payload.get("messages", [])
-        combined = "\n".join(getattr(message, "content", str(message)) for message in messages)
+        text = str(response.payload.get("text") or "")
         approved = True
-        reason = "response proposal satisfies current safety constraints"
-        if risk == RiskLevel.HIGH and not any(word in combined for word in ["高风险处理规则", "当前安全", "可信任的人", "紧急"]):
+        reason_code = "OK"
+        reason = "response candidate satisfies current safety constraints"
+        review_mode = "rules"
+        if not text.strip():
             approved = False
-            reason = "high-risk response proposal lacks immediate safety guidance"
+            reason_code = "EMPTY_RESPONSE"
+            reason = "response candidate text is empty"
+        elif any(word in text for word in BOUNDARY_VIOLATION_WORDS):
+            approved = False
+            reason_code = "BOUNDARY_VIOLATION"
+            reason = "response candidate contains boundary or diagnosis wording"
+        elif risk == RiskLevel.HIGH and not any(word in text for word in SAFETY_GUIDANCE_WORDS):
+            approved = False
+            reason_code = "MISSING_SAFETY_GUIDANCE"
+            reason = "high-risk response candidate lacks immediate safety guidance"
+        if approved:
+            # 规则只能兜住确定性问题；语气贬低、隐性诊断、危险认同等需要语义审核。
+            # 模型审核不可用时回退为纯规则结论，绝不因审核服务故障阻断安全回复。
+            llm_verdict = self._llm_semantic_review(text, risk)
+            if llm_verdict is not None:
+                review_mode = "rules+llm"
+                llm_approved, llm_reason_code, llm_reason = llm_verdict
+                if not llm_approved:
+                    approved = False
+                    reason_code = llm_reason_code
+                    reason = llm_reason
         payload = {
             "approved": approved,
+            "reasonCode": reason_code,
             "reason": reason,
+            "reviewMode": review_mode,
             "responseArtifactId": response.id,
+            "responseArtifactVersion": response.version,
             "risk": risk.value,
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
         kind = "safety_review" if approved else "critique"
-        events = ()
+        events: tuple[AgentEvent, ...] = (
+            AgentEvent(
+                type=AgentEventType.FINAL_RESPONSE_REVIEWED,
+                actor=self.name,
+                task_id=task.id,
+                artifact_id=response.id,
+                message=reason,
+                metadata={
+                    "approved": approved,
+                    "reasonCode": reason_code,
+                    "responseArtifactId": response.id,
+                    "responseArtifactVersion": response.version,
+                },
+                round=board.current_round,
+            ),
+        )
         follow_up_tasks = ()
         if not approved:
             events = (
+                *events,
                 AgentEvent(
                     type=AgentEventType.REVISION_REQUESTED,
                     actor=self.name,
                     task_id=task.id,
                     artifact_id=response.id,
                     message=reason,
+                    metadata={"reasonCode": reason_code},
+                    round=board.current_round,
                 ),
             )
-            follow_up_tasks = (
-                AgentTask(
-                    id=f"task:revise-response:{uuid.uuid4().hex[:8]}",
-                    title="Revise unsafe response proposal",
-                    description=reason,
-                    priority=TaskPriority.CRITICAL,
-                    required_capabilities=frozenset({AgentCapability.RESPONSE.value}),
-                    created_by=self.name,
-                    metadata={"kind": "response", "revisionOf": response.id},
-                ),
-            )
-        self.remember(f"review approved={approved}; reason={reason}")
+            # 修订任务统一由 Coordinator 根据 critique 派生（确定性 id，天然去重）。
+            # SafetyAgent 不再自行创建，避免同一否决产生两个修订任务、生成两个
+            # 同版本候选导致审核/采纳 id 错位并烧掉认领预算。
+        self.remember(f"review approved={approved}; reasonCode={reason_code}")
         return AgentTurnResult(
-            artifacts=(self._artifact(kind, payload, task, 0.95, {"responseArtifactId": response.id}),),
+            artifacts=(
+                self._artifact(
+                    kind,
+                    payload,
+                    task,
+                    0.95,
+                    {
+                        "responseArtifactId": response.id,
+                        "responseArtifactVersion": response.version,
+                        "reasonCode": reason_code,
+                        "approved": approved,
+                    },
+                ),
+            ),
             tasks=follow_up_tasks,
             events=events,
         )
+
+    def _llm_semantic_review(self, text: str, risk: RiskLevel) -> tuple[bool, str, str] | None:
+        """LLM 语义审核：捕捉规则覆盖不到的贬低语气、隐性诊断、危险认同等。
+
+        只输出结构化 reasonCode 与证据片段，不记录任何思维链。
+        返回 None 表示审核模型不可用，调用方回退为纯规则结论。
+        """
+        try:
+            raw = self.client().complete([
+                AiMessage(role="system", content=(
+                    f"{self.profile.system_prompt}\n"
+                    "你正在审核一段即将发送给学生的回复。只输出一个 JSON 对象，格式："
+                    '{"approved": true|false, "reasonCode": "OK|DISMISSIVE_TONE|DIAGNOSTIC_CLAIM|'
+                    'BOUNDARY_VIOLATION|UNSAFE_CONTENT|MISSING_SAFETY_GUIDANCE", "evidence": "简短证据片段"}\n'
+                    "拒绝标准：贬低/说教/否定用户感受；直接下诊断或建议用药；承诺绝对保密或越界关系；"
+                    "认同、鼓励或合理化用户的自伤念头；提供任何自伤/伤人方法细节；"
+                    "高风险情境下没有优先关注即时安全与求助渠道。只给结论，不输出分析过程。"
+                )),
+                AiMessage(role="user", content=f"当前风险等级：{risk.value}\n\n待审核回复：\n{text}"),
+            ])
+            data = json.loads(raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip())
+            approved = bool(data.get("approved", True))
+            reason_code = str(data.get("reasonCode") or "OK").upper()
+            if reason_code not in REVIEW_REASON_CODES:
+                reason_code = "OK" if approved else "UNSAFE_CONTENT"
+            evidence = str(data.get("evidence") or "")[:120]
+            if approved:
+                return True, "OK", "llm semantic review passed"
+            return False, reason_code, f"llm semantic review rejected: {reason_code}; evidence={evidence}"
+        except Exception:
+            return None
 
 
 class ContextAgent(BaseAutonomousAgent):
@@ -334,18 +422,18 @@ class ContextAgent(BaseAutonomousAgent):
 
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
         if board.latest_artifact("context"):
-            return AgentDecision(False, reason="context artifact already exists")
+            return AgentDecision(False, reason="context artifact already exists", reason_code="CONTEXT_EXISTS")
         if AgentCapability.CONTEXT.value in task.required_capabilities:
-            return AgentDecision(True, 0.86, "task explicitly asks for context")
+            return AgentDecision(True, 0.86, "task explicitly asks for context", reason_code="TASK_REQUIRES_CONTEXT")
         # Don't claim the root task based only on keyword signals before UnderstandingAgent
         # has published an intent artifact; wait for the coordinator to create a context task.
         if task.metadata.get("kind") == "root" and board.latest_artifact("intent") is None:
-            return AgentDecision(False, reason="waiting for intent artifact before claiming root task")
+            return AgentDecision(False, reason="waiting for intent artifact before claiming root task", reason_code="WAITING_FOR_INTENT")
         risk = _risk_level(board)
         intent = _intent(board)
         if risk in {RiskLevel.MEDIUM, RiskLevel.HIGH} or intent in {IntentType.CONSULT, IntentType.RISK}:
-            return AgentDecision(True, 0.82, "support path needs memory, RAG, and skill context")
-        return AgentDecision(False, reason="context not necessary for current artifacts")
+            return AgentDecision(True, 0.82, "support path needs memory, RAG, and skill context", reason_code="SUPPORT_PATH_NEEDS_CONTEXT")
+        return AgentDecision(False, reason="context not necessary for current artifacts", reason_code="CONTEXT_NOT_REQUIRED")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         from app.services.memory import compact_history_for_prompt
@@ -362,8 +450,41 @@ class ContextAgent(BaseAutonomousAgent):
         query = ""
         skill_context = ""
         iterations = 0
+        events: tuple[AgentEvent, ...] = ()
         if intent != IntentType.CHAT or risk != RiskLevel.LOW:
-            query, retrieved, iterations = self._iterative_retrieve(memory_brief, board.model_input)
+            retrieval_started = time.perf_counter()
+            try:
+                query, retrieved, iterations = self._iterative_retrieve(memory_brief, board.model_input)
+            except Exception as exc:
+                # RAG 失败不阻断链路：降级为空检索结果继续
+                query, retrieved, iterations = board.model_input[:60], [], 0
+                events = (
+                    AgentEvent(
+                        type=AgentEventType.RAG_RETRIEVAL_FAILED,
+                        actor=self.name,
+                        task_id=task.id,
+                        message="knowledge retrieval failed; continuing without RAG evidence",
+                        metadata={"errorType": type(exc).__name__, "durationMs": (time.perf_counter() - retrieval_started) * 1000.0},
+                        duration_ms=(time.perf_counter() - retrieval_started) * 1000.0,
+                        round=board.current_round,
+                    ),
+                )
+            else:
+                events = (
+                    AgentEvent(
+                        type=AgentEventType.RAG_RETRIEVAL_COMPLETED,
+                        actor=self.name,
+                        task_id=task.id,
+                        message=f"retrieved {len(retrieved)} knowledge chunks",
+                        metadata={
+                            "resultCount": len(retrieved),
+                            "durationMs": (time.perf_counter() - retrieval_started) * 1000.0,
+                            "iterations": iterations,
+                        },
+                        duration_ms=(time.perf_counter() - retrieval_started) * 1000.0,
+                        round=board.current_round,
+                    ),
+                )
             skill_context = MindBridgeSkillLibrary.response_skill_context(intent, risk, board.user_input)
         payload = {
             "memoryBrief": memory_brief,
@@ -377,6 +498,7 @@ class ContextAgent(BaseAutonomousAgent):
         self.remember(f"context intent={intent.value}; risk={risk.value}; retrieved={len(retrieved)}; ragIterations={iterations}")
         return AgentTurnResult(
             artifacts=(self._artifact("context", payload, task, 0.88),),
+            events=events,
             messages=(
                 AgentMessage(
                     id=f"msg:{uuid.uuid4().hex[:10]}",
@@ -548,19 +670,19 @@ class ResponseAgent(BaseAutonomousAgent):
     )
 
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
-        if board.latest_artifact("response_proposal") and "revisionOf" not in task.metadata:
-            return AgentDecision(False, reason="response proposal already exists")
+        if board.latest_artifact("response_candidate") and "revisionOf" not in task.metadata:
+            return AgentDecision(False, reason="response candidate already exists", reason_code="RESPONSE_EXISTS")
         if not board.latest_artifact("intent") or not board.latest_artifact("risk"):
-            return AgentDecision(False, reason="response needs intent and risk artifacts")
+            return AgentDecision(False, reason="response needs intent and risk artifacts", reason_code="PREREQUISITES_MISSING")
         intent = _intent(board)
         risk = _risk_level(board)
         if intent == IntentType.CHAT and risk == RiskLevel.LOW:
-            return AgentDecision(True, 0.78, "normal chat response can be proposed")
+            return AgentDecision(True, 0.78, "normal chat response can be proposed", reason_code="RESPONSE_READY")
         if board.latest_artifact("context") or risk == RiskLevel.HIGH:
-            return AgentDecision(True, 0.84, "support response has enough artifacts")
+            return AgentDecision(True, 0.84, "support response has enough artifacts", reason_code="CONTEXT_READY_FOR_RESPONSE")
         if AgentCapability.RESPONSE.value in task.required_capabilities:
-            return AgentDecision(True, 0.65, "explicit response task")
-        return AgentDecision(False, reason="waiting for context")
+            return AgentDecision(True, 0.65, "explicit response task", reason_code="TASK_REQUIRES_RESPONSE")
+        return AgentDecision(False, reason="waiting for context", reason_code="WAITING_FOR_CONTEXT")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         intent = _intent(board)
@@ -608,7 +730,25 @@ class ResponseAgent(BaseAutonomousAgent):
                 *model_history,
             ]
             mode = "support"
+        # ResponseAgent 直接生成完整候选文本；后续 SafetyAgent 审核、ChatService 发送的都是这份文本。
+        llm_started = time.perf_counter()
+        degraded = False
+        error_type = None
+        try:
+            text = self.client().complete(messages).strip()
+        except Exception as exc:
+            degraded = True
+            error_type = type(exc).__name__
+            text = fallback_response_text(risk)
+        if not text:
+            degraded = True
+            text = fallback_response_text(risk)
+        llm_duration_ms = (time.perf_counter() - llm_started) * 1000.0
+        revision_of = str(task.metadata.get("revisionOf") or "")
+        previous = next((artifact for artifact in board.artifacts if artifact.id == revision_of), None) if revision_of else None
+        version = previous.version + 1 if previous else 1
         payload = {
+            "text": text,
             "messages": messages,
             "mode": mode,
             "intent": intent.value,
@@ -616,9 +756,31 @@ class ResponseAgent(BaseAutonomousAgent):
             "responseAgent": self.name,
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
-        self.remember(f"response mode={mode}; intent={intent.value}; risk={risk.value}")
+        if degraded:
+            payload["degraded"] = True
+            payload["errorType"] = error_type
+        metadata = {"mode": mode, "version": version}
+        if revision_of:
+            metadata["revisionOf"] = revision_of
+        if degraded:
+            metadata["degraded"] = True
+            metadata["errorType"] = error_type
+        artifact = replace(self._artifact("response_candidate", payload, task, 0.86, metadata), version=version)
+        self.remember(f"response mode={mode}; intent={intent.value}; risk={risk.value}; degraded={degraded}")
         return AgentTurnResult(
-            artifacts=(self._artifact("response_proposal", payload, task, 0.86),),
+            artifacts=(artifact,),
+            events=(
+                AgentEvent(
+                    type=AgentEventType.FINAL_RESPONSE_GENERATED,
+                    actor=self.name,
+                    task_id=task.id,
+                    artifact_id=artifact.id,
+                    message=f"response candidate generated mode={mode} degraded={degraded}",
+                    metadata={"mode": mode, "degraded": degraded, "version": version},
+                    duration_ms=llm_duration_ms,
+                    round=board.current_round,
+                ),
+            ),
             messages=(
                 AgentMessage(
                     id=f"msg:{uuid.uuid4().hex[:10]}",
@@ -645,7 +807,7 @@ class CoordinatorAgent(BaseAutonomousAgent):
     )
 
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
-        return AgentDecision(False, reason="CoordinatorAgent is driven by the event loop, not by fixed workflow slots")
+        return AgentDecision(False, reason="CoordinatorAgent is driven by the event loop, not by fixed workflow slots", reason_code="EVENT_LOOP_DRIVEN")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         return AgentTurnResult(close_task=False)
@@ -662,6 +824,37 @@ class CoordinatorAgent(BaseAutonomousAgent):
 
     def remember_acceptance(self, artifact_id: str, reason: str) -> None:
         self.remember(f"accepted={artifact_id}; reason={reason}")
+
+
+def fallback_response_text(risk: RiskLevel) -> str:
+    """确定性安全兜底文本：LLM 调用失败或无候选文本时使用，不再调模型。"""
+    if risk == RiskLevel.HIGH:
+        return (
+            "我听见你现在非常难受，这种痛苦不该一个人扛。请马上联系身边可信任的人，"
+            "或立刻联系辅导员、学校心理中心；如果情况紧急，请拨打当地紧急求助电话（110/120）。"
+            "先把自己移到有人的地方，把可能伤害自己的东西放远一点。我会一直在这里陪你。"
+        )
+    if risk == RiskLevel.MEDIUM:
+        return (
+            "我听见你最近承受了不少压力。先做几次缓慢的呼吸，把最担心的一件事写下来，"
+            "只挑一个最小的步骤先处理。如果这种状态持续，建议联系学校心理中心或辅导员一起看一看。"
+        )
+    return (
+        "我在。你可以先说说现在最具体的困扰，我们一步一步拆开来看。"
+        "如果感觉撑不住，请马上联系身边可信任的人或学校心理中心。"
+    )
+
+
+def _latest_review_for(board: CollaborationBlackboard, response_id: str):
+    """查找引用指定候选的最新审核结论（safety_review 或 critique）。
+
+    critique（审核未通过）同样是"已审核"：被否决的候选不应被重复审核，
+    否则每轮都会对同一旧候选重复发 critique 并烧掉认领预算。
+    """
+    for artifact in reversed(board.artifacts):
+        if artifact.kind in {"safety_review", "critique"} and artifact.metadata.get("responseArtifactId") == response_id:
+            return artifact
+    return None
 
 
 def _intent(board: CollaborationBlackboard) -> IntentType:

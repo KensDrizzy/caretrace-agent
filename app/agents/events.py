@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from enum import Enum
 from typing import Any
+from uuid import uuid4
+
+from app.core.timezone import now_cn
 
 
 class AgentEventType(str, Enum):
@@ -19,6 +23,22 @@ class AgentEventType(str, Enum):
     FINAL_ACCEPTED = "FINAL_ACCEPTED"
     ROUND_STARTED = "ROUND_STARTED"
     BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+    DECISION_EVALUATED = "DECISION_EVALUATED"
+    CANDIDATE_SELECTED = "CANDIDATE_SELECTED"
+    AGENT_EXECUTION_STARTED = "AGENT_EXECUTION_STARTED"
+    AGENT_EXECUTION_COMPLETED = "AGENT_EXECUTION_COMPLETED"
+    AGENT_EXECUTION_FAILED = "AGENT_EXECUTION_FAILED"
+    FINAL_RESPONSE_GENERATED = "FINAL_RESPONSE_GENERATED"
+    FINAL_RESPONSE_REVIEWED = "FINAL_RESPONSE_REVIEWED"
+    TOOL_EXECUTION_STARTED = "TOOL_EXECUTION_STARTED"
+    TOOL_EXECUTION_COMPLETED = "TOOL_EXECUTION_COMPLETED"
+    TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED"
+    TRACE_COMPLETED = "TRACE_COMPLETED"
+    TRACE_FAILED = "TRACE_FAILED"
+    LLM_CALL_COMPLETED = "LLM_CALL_COMPLETED"
+    LLM_CALL_FAILED = "LLM_CALL_FAILED"
+    RAG_RETRIEVAL_COMPLETED = "RAG_RETRIEVAL_COMPLETED"
+    RAG_RETRIEVAL_FAILED = "RAG_RETRIEVAL_FAILED"
 
 
 class TaskStatus(str, Enum):
@@ -96,6 +116,7 @@ class AgentArtifact:
     confidence: float = 1.0
     task_id: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    version: int = 1
 
 
 @dataclass(frozen=True)
@@ -106,6 +127,12 @@ class AgentEvent:
     artifact_id: str = ""
     message: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
+    event_id: str = field(default_factory=lambda: uuid4().hex)
+    round: int = 0
+    timestamp: datetime = field(default_factory=now_cn)
+    duration_ms: float | None = None
+    input_artifact_ids: tuple[str, ...] = ()
+    output_artifact_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -129,6 +156,7 @@ class CollaborationBlackboard:
     artifacts: tuple[AgentArtifact, ...] = field(default_factory=tuple)
     events: tuple[AgentEvent, ...] = field(default_factory=tuple)
     final_artifact_id: str = ""
+    current_round: int = 0
 
     def add_task(self, task: AgentTask) -> "CollaborationBlackboard":
         tasks = dict(self.tasks)
@@ -149,6 +177,7 @@ class CollaborationBlackboard:
                 task_id=message.task_id,
                 message=message.content,
                 metadata={"recipient": message.recipient, "kind": message.kind},
+                round=self.current_round,
             )
         )
 
@@ -161,7 +190,8 @@ class CollaborationBlackboard:
                 task_id=artifact.task_id,
                 artifact_id=artifact.id,
                 message=artifact.kind,
-                metadata={"confidence": artifact.confidence},
+                metadata={"confidence": artifact.confidence, "version": artifact.version},
+                round=self.current_round,
             )
         )
 
@@ -179,11 +209,18 @@ class CollaborationBlackboard:
                         actor=agent_name,
                         task_id=follow_up.id,
                         message=follow_up.title,
+                        round=self.current_round,
                     )
                 )
         if result.close_task:
             board = board.update_task(task.close()).append_event(
-                AgentEvent(type=AgentEventType.TASK_CLOSED, actor=agent_name, task_id=task.id, message=task.title)
+                AgentEvent(
+                    type=AgentEventType.TASK_CLOSED,
+                    actor=agent_name,
+                    task_id=task.id,
+                    message=task.title,
+                    round=self.current_round,
+                )
             )
         else:
             board = board.update_task(task.reopen())
@@ -221,5 +258,6 @@ class CollaborationBlackboard:
                 actor=actor,
                 artifact_id=artifact_id,
                 message=reason,
+                round=self.current_round,
             )
         )

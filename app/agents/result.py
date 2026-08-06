@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from app.core.enums import IntentType, RiskLevel
@@ -29,6 +30,15 @@ class AgentRunResult:
     collaboration_events: list[Any] = field(default_factory=list)
     collaboration_tasks: list[Any] = field(default_factory=list)
     collaboration_artifacts: list[Any] = field(default_factory=list)
+    final_response: str = ""
+    final_response_artifact_id: str = ""
+    final_review_artifact_id: str = ""
+    trace_id: str = ""
+    status: str = "COMPLETED"  # RUNNING / COMPLETED / FAILED
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error: dict | None = None
+    llm_call_records: list = field(default_factory=list)
 
     @property
     def requires_report(self) -> bool:

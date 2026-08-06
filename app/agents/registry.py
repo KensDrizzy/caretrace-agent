@@ -30,6 +30,7 @@ class AgentDecision:
     claim: bool
     confidence: float = 0.0
     reason: str = ""
+    reason_code: str = ""
 
 
 class AutonomousAgent(Protocol):
@@ -60,14 +61,33 @@ class AgentRegistry:
         return [candidate.agent for candidate in self.candidate_decisions_for(task, board)]
 
     def candidate_decisions_for(self, task: AgentTask, board: CollaborationBlackboard) -> list[AgentCandidate]:
-        candidates = []
+        return [candidate for candidate in self.evaluate_decisions_for(task, board) if candidate.decision.claim]
+
+    def evaluate_decisions_for(self, task: AgentTask, board: CollaborationBlackboard) -> list[AgentCandidate]:
+        """Evaluate every agent against the task, including non-claiming ones.
+
+        Agents lacking the required capabilities are not asked to decide; they
+        receive a deterministic CAPABILITY_MISMATCH decision instead. Claiming
+        candidates are sorted by confidence (desc) ahead of the rest.
+        """
+        claiming: list[AgentCandidate] = []
+        declined: list[AgentCandidate] = []
         for agent in self._agents:
             if not self._has_required_capability(agent, task):
+                declined.append(
+                    AgentCandidate(
+                        agent,
+                        AgentDecision(False, 0.0, "capability mismatch", reason_code="CAPABILITY_MISMATCH"),
+                    )
+                )
                 continue
             decision = agent.decide(task, board)
             if decision.claim:
-                candidates.append(AgentCandidate(agent, decision))
-        return sorted(candidates, key=lambda item: item.decision.confidence, reverse=True)
+                claiming.append(AgentCandidate(agent, decision))
+            else:
+                declined.append(AgentCandidate(agent, decision))
+        claiming.sort(key=lambda item: item.decision.confidence, reverse=True)
+        return [*claiming, *declined]
 
     def _has_required_capability(self, agent: AutonomousAgent, task: AgentTask) -> bool:
         if not task.required_capabilities:

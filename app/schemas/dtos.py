@@ -133,6 +133,12 @@ class AgentRunTraceResponse(BaseModel):
     responseMessages: list[dict[str, Any]]
     assessment: dict[str, Any]
     createdAt: datetime
+    traceId: Optional[str] = None
+    traceVersion: Optional[str] = None
+    status: Optional[str] = None
+    finalResponse: Optional[str] = None
+    startedAt: Optional[datetime] = None
+    completedAt: Optional[datetime] = None
 
 
 class ToolAuditResponse(BaseModel):

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import Iterable
+import time
+from dataclasses import dataclass
+from typing import Callable, Iterable
 
 import httpx
 
@@ -78,17 +80,71 @@ class ModelNotFoundError(AiError):
     """Requested model does not exist on the provider."""
 
 
+@dataclass(frozen=True)
+class LlmCallMetrics:
+    model_name: str
+    duration_ms: float
+    status: str  # "OK" / "ERROR"
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    error_type: str | None = None
+    retry_count: int = 0
+
+
 class AiClient:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, metrics_hook: Callable[[LlmCallMetrics], None] | None = None):
         self.settings = settings
+        self.metrics_hook = metrics_hook
 
     def complete(self, messages: list[AiMessage]) -> str:
         provider = self.settings.ai_provider.lower()
+        started = time.perf_counter()
+        try:
+            if provider == "ollama":
+                content, input_tokens, output_tokens = self._ollama(messages, stream=False)
+            elif provider in {"openai", "deepseek"}:
+                content, input_tokens, output_tokens = self._openai(messages, stream=False, use_deepseek=provider == "deepseek")
+            else:
+                content, input_tokens, output_tokens = self._mock(messages), None, None
+        except Exception as exc:
+            self._emit_metrics(provider, started, status="ERROR", error_type=type(exc).__name__)
+            raise
+        self._emit_metrics(provider, started, status="OK", input_tokens=input_tokens, output_tokens=output_tokens)
+        return content
+
+    def _emit_metrics(
+        self,
+        provider: str,
+        started: float,
+        status: str,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        error_type: str | None = None,
+    ) -> None:
+        if self.metrics_hook is None:
+            return
+        try:
+            self.metrics_hook(
+                LlmCallMetrics(
+                    model_name=self._model_name(provider),
+                    duration_ms=(time.perf_counter() - started) * 1000.0,
+                    status=status,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    error_type=error_type,
+                )
+            )
+        except Exception:
+            pass
+
+    def _model_name(self, provider: str) -> str:
         if provider == "ollama":
-            return self._ollama(messages, stream=False)
-        if provider in {"openai", "deepseek"}:
-            return self._openai(messages, stream=False, use_deepseek=provider == "deepseek")
-        return self._mock(messages)
+            return self.settings.ollama_model
+        if provider == "openai":
+            return self.settings.openai_model
+        if provider == "deepseek":
+            return self.settings.deepseek_model
+        return "mock"
 
     async def stream(self, messages: list[AiMessage]):
         provider = self.settings.ai_provider.lower()
@@ -104,7 +160,7 @@ class AiClient:
         for chunk in split_text(text, 12):
             yield chunk
 
-    def _ollama(self, messages: list[AiMessage], stream: bool) -> str:
+    def _ollama(self, messages: list[AiMessage], stream: bool) -> tuple[str, int | None, int | None]:
         payload = {
             "model": self.settings.ollama_model,
             "messages": [m.model_dump() for m in messages],
@@ -122,7 +178,8 @@ class AiClient:
             if exc.response.status_code == 404:
                 raise ModelNotFoundError(f"模型未找到：{self.settings.ollama_model}。请运行 create-finetuned-model.sh 或检查 Ollama 模型列表。") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
-        return response.json()["message"]["content"]
+        data = response.json()
+        return data["message"]["content"], data.get("prompt_eval_count"), data.get("eval_count")
 
     async def _ollama_stream(self, messages: list[AiMessage]):
         payload = {
@@ -150,7 +207,7 @@ class AiClient:
                 raise ModelNotFoundError(f"模型未找到：{self.settings.ollama_model}。请运行 create-finetuned-model.sh 或检查 Ollama 模型列表。") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
 
-    def _openai(self, messages: list[AiMessage], stream: bool, use_deepseek: bool = False) -> str:
+    def _openai(self, messages: list[AiMessage], stream: bool, use_deepseek: bool = False) -> tuple[str, int | None, int | None]:
         base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url
         api_key = self.settings.deepseek_api_key if use_deepseek else self.settings.openai_api_key
         model = self.settings.deepseek_model if use_deepseek else self.settings.openai_model
@@ -173,7 +230,9 @@ class AiClient:
             if exc.response.status_code == 404:
                 raise ModelNotFoundError(f"模型未找到：{model}") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
-        return response.json()["choices"][0]["message"]["content"]
+        data = response.json()
+        usage = data.get("usage") or {}
+        return data["choices"][0]["message"]["content"], usage.get("prompt_tokens"), usage.get("completion_tokens")
 
     async def _openai_stream(self, messages: list[AiMessage], use_deepseek: bool = False):
         base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url

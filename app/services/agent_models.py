@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from app.core.config import Settings
-from app.services.ai import AiClient
+from app.services.ai import AiClient, LlmCallMetrics
 
 
 AGENT_MODEL_ALIASES = {
@@ -37,7 +37,7 @@ class AgentModelRegistry:
         max_tokens = int(self._setting(f"agent_model_{alias}_max_tokens", getattr(self.settings, "ai_max_tokens", 512)))
         return AgentModelProfile(provider=provider, model=model, temperature=temperature, max_tokens=max_tokens)
 
-    def client_for(self, agent_name: str) -> AiClient:
+    def client_for(self, agent_name: str, metrics_hook: Callable[[LlmCallMetrics], None] | None = None) -> AiClient:
         profile = self.profile_for(agent_name)
         settings = copy.copy(self.settings)
         settings.ai_provider = profile.provider
@@ -49,7 +49,7 @@ class AgentModelRegistry:
             settings.deepseek_model = profile.model
         else:
             settings.ollama_model = profile.model
-        return AiClient(settings)
+        return AiClient(settings, metrics_hook=metrics_hook)
 
     def _setting(self, name: str, fallback: Any) -> Any:
         value = getattr(self.settings, name, None)

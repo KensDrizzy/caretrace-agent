@@ -71,19 +71,22 @@ scripts/
 ```text
 TURN_STARTED
 -> CoordinatorAgent 创建任务
--> UnderstandingAgent / SafetyAgent / ContextAgent / ResponseAgent 认领任务并发布 artifact
--> SafetyAgent 审查候选回复
--> CoordinatorAgent FINAL_ACCEPTED
--> SSE 流式输出
+-> UnderstandingAgent / SafetyAgent / ContextAgent 认领任务并发布 artifact
+-> ResponseAgent 调用模型生成完整候选文本（response_candidate artifact）
+-> SafetyAgent 审核候选文本（规则 + LLM 语义审核，引用 artifact id + version）
+-> CoordinatorAgent 校验审核通过后 FINAL_ACCEPTED
+-> ChatService 逐块推送同一份已审核文本（不再二次调用模型）
+-> 工具执行（Excel / 个案 / 预警，幂等）
+-> TRACE_COMPLETED，Trace v2（含全部事件与指标）落库
 ```
 
 各 Agent 分工：
 
 - `CoordinatorAgent`：维护任务板、预算、安全门槛、冲突仲裁和最终采纳。
 - `UnderstandingAgent`：判断 `CHAT / CONSULT / RISK`，发布 intent artifact。
-- `SafetyAgent`：独立评估风险，必要时发布 `SAFETY_OVERRIDE`，并审查候选回复。
+- `SafetyAgent`：独立评估风险，必要时发布 `SAFETY_OVERRIDE`，并审核 ResponseAgent 生成的候选文本（审核失败创建修订任务，未审核/审核未通过的文本绝不会被发送）。
 - `ContextAgent`：按需聚合 Redis / MySQL 记忆、RAG 检索结果和 Skill 约束。
-- `ResponseAgent`：根据黑板 artifact 生成候选回复 prompt，等待安全审查和采纳。
+- `ResponseAgent`：根据黑板 artifact 调用模型生成完整候选回复文本；LLM 不可用时降级为确定性安全兜底文本。
 
 ## 安装依赖
 
@@ -352,12 +355,64 @@ AI_PROVIDER=mock python -m app.rag_eval.runner
 target/rag-eval-report.json
 ```
 
-## 单元测试
+## Agent Trace 与离线评测（Agent Evaluation）
 
-当前 `tests/` 里的基础回归用例使用 Python 标准库 `unittest`，不依赖 `pytest`：
+CareTrace 的每次用户请求都会产生一条统一 `trace_id` 的 **Trace v2**，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复的完整生命周期（`RUNNING -> COMPLETED / FAILED`）。
+
+### 回复与审核链路
+
+```text
+Understanding / Safety / Context
+-> ResponseAgent 调用模型生成完整候选文本（response_candidate artifact，含 text + version）
+-> SafetyAgent 审核候选文本本身（规则 + LLM 语义审核；safety_review 引用 artifact id + version）
+-> Coordinator 校验审核通过且版本一致后 FINAL_ACCEPTED
+-> ChatService 逐块推送同一份已审核文本（不再二次调用模型）
+-> 工具执行（幂等，含 idempotencyKey）
+-> TRACE_COMPLETED，Trace 与全部事件落库
+```
+
+关键保证：
+
+- 最终发送文本与审核通过的文本**逐字一致**；审核失败创建修订任务，未审核/审核未通过的内容绝不发送。
+- Trace 只记录结构化 `reasonCode`、证据字段和结果，不记录模型思维链。
+- 所有 Agent 的认领与拒绝决策（`DECISION_EVALUATED`，含 `claim=false`）都进入 Trace。
+- 每次 Agent / LLM / RAG / Tool 调用记录 `durationMs / status / retryCount / modelName / inputTokens / outputTokens / errorType`（token 无法获取时为空，不伪造）。
+
+### 事件与存储
+
+核心事件：`DECISION_EVALUATED / CANDIDATE_SELECTED / TASK_CREATED / TASK_CLAIMED / AGENT_EXECUTION_STARTED|COMPLETED|FAILED / ARTIFACT_PUBLISHED / FINAL_RESPONSE_GENERATED / FINAL_RESPONSE_REVIEWED / REVISION_REQUESTED / FINAL_ACCEPTED / LLM_CALL_COMPLETED|FAILED / RAG_RETRIEVAL_COMPLETED|FAILED / TOOL_EXECUTION_STARTED|COMPLETED|FAILED / SAFETY_OVERRIDE / BUDGET_EXHAUSTED / TRACE_COMPLETED / TRACE_FAILED`。
+
+Trace 主记录落 `agent_run_traces`（新增 `trace_id / trace_version / status / final_response / final_response_artifact_id / final_review_artifact_id / error_json / metrics_json` 等列），事件落 `agent_trace_events` 表。旧库迁移：
 
 ```bash
-python -m unittest discover -s tests
+python scripts/migrate_trace_v2.py   # 幂等，MySQL / SQLite 均适用
+```
+
+旧版本 Trace（无 `traceVersion` 或 != 2.x）在评测侧会给出明确的 `TraceVersionError`，不会静默误解析。
+
+### 离线评测
+
+```bash
+python -m app.agent_eval.runner \
+  --dataset tests/eval/caretrace_gold.jsonl \
+  --output reports/eval_report.json \
+  --judge mock          # off | mock | llm
+```
+
+- **Hard Gate（确定性）**：`InvariantEvaluator` 校验轨迹不变量——requiredEvents / forbiddenEvents / requiredArtifacts / requiredAgents / forbiddenAgents / partialOrder / maxRounds / maxRevisions，外加全局不变量：最终回复必须经对应版本审核、未审核不得采纳、HIGH 必须 `SAFETY_OVERRIDE`、CHAT+LOW 不得调用 ContextAgent/RAG、CONSULT/RISK 必须加载 Context、任务依赖顺序、幂等工具不重复、关键任务未关闭不得完成、预算耗尽无有效结果即失败。高风险漏报、未审核放行、非法工具调用属于 hard failure，不能被 rubric 平均分抵消。
+- **Rubric Judge（语义）**：可替换的 `RubricJudge` 接口（`MockRubricJudge` 启发式 / `AiClientRubricJudge` 任意 LLM），六个 0-2 分维度（risk_alignment / relevance / empathy_boundary / actionability / groundedness / trajectory_efficiency），Pydantic 校验输出；Judge 只评语义，轨迹合规性永远由 Hard Gate 判定。
+- **Golden Dataset**：`tests/eval/caretrace_gold.jsonl` 共 120 条（dev 80 / heldout 40；CHAT 25 / CONSULT 55 / RISK 40；对抗与系统异常 29），区分 `human+synthetic / gold+silver` 标签可信度；核心指标只统计 gold，silver 用于覆盖扩展与回归扫描。GT 使用必需节点 / 禁止节点 / 部分顺序约束，不要求与某条固定标准轨迹一致。
+- **报告指标**：总通过率、Hard Gate 通过率、Intent/Risk Accuracy 与 Macro-F1、High-Risk Recall 与漏报率（漏报案例单独列出）、平均 Rubric 分、平均轮数与 Revision 次数、平均/P95 延迟、Budget Exhaustion Rate、无效 Agent 激活率、失败案例明细，并按 split 与 labelStatus 分组。
+
+回放默认使用 `ScriptedAiClient`（按 case 的 `modelScript` 确定性出参），不调用真实模型；接真实模型时用 `--judge llm --ai-provider ollama|openai|deepseek`。
+
+## 单元测试
+
+基础回归用例使用 Python 标准库 `unittest`；Trace v2 与离线评测的新测试使用 `pytest`（Fake/Stub LLM、Retriever、Tool，不调用真实外部模型）：
+
+```bash
+python -m unittest discover -s tests   # 旧有用例
+python -m pytest tests/ -q             # 全部测试（含 Trace/Eval 场景）
 ```
 
 ## Agent Runtime Harness

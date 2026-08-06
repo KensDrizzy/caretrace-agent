@@ -121,6 +121,12 @@ class ReportService:
                     responseMessages=_loads(row.response_messages_json, []),
                     assessment=_loads(row.assessment_json, {}),
                     createdAt=row.created_at,
+                    traceId=getattr(row, "trace_id", None) or None,
+                    traceVersion=getattr(row, "trace_version", None) or None,
+                    status=getattr(row, "status", None) or None,
+                    finalResponse=getattr(row, "final_response", None) or None,
+                    startedAt=getattr(row, "started_at", None),
+                    completedAt=getattr(row, "completed_at", None),
                 )
             )
         return responses

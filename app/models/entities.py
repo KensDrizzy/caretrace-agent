@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from typing import Optional
 
@@ -200,6 +201,35 @@ class AgentRunTrace(Base):
     response_messages_json: Mapped[str] = mapped_column(Text, default="[]")
     assessment_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    # trace v2 字段（旧列保留以兼容 admin 页面）
+    trace_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, default=lambda: uuid.uuid4().hex)
+    trace_version: Mapped[str] = mapped_column(String(16), default="2.0")
+    user_message_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="RUNNING", index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    final_response: Mapped[str] = mapped_column(Text, default="")
+    final_response_artifact_id: Mapped[str] = mapped_column(String(128), default="")
+    final_review_artifact_id: Mapped[str] = mapped_column(String(128), default="")
+    error_json: Mapped[str] = mapped_column(Text, default="{}")
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class AgentTraceEvent(Base):
+    __tablename__ = "agent_trace_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    trace_id: Mapped[str] = mapped_column(String(64), index=True)
+    event_id: Mapped[str] = mapped_column(String(64))
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    actor: Mapped[str] = mapped_column(String(128))
+    task_id: Mapped[str] = mapped_column(String(128), default="")
+    round: Mapped[int] = mapped_column(Integer, default=0)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=now)
+    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    input_artifact_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    output_artifact_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
 
 
 class ToolAuditRecord(Base):
