@@ -13,6 +13,8 @@
 - 本地微调模型接入：支持通过 Ollama 加载 `mindbridge-qwen2.5-7b-ft-q4_k_m.gguf`。
 - OpenAI-compatible API 接入：也可切换到云端模型。
 - MCP 工具服务：暴露 Excel 报告写入和风险通知工具，后端高风险后处理通过 MCP client 调用这些工具。
+- Agent Trace v2：每次请求一条统一 `trace_id` 的可回放轨迹，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复；事件落 `agent_trace_events` 表。
+- 离线评测：Golden Dataset（JSONL）+ 确定性 Hard Gate（轨迹不变量）+ 可替换 Rubric LLM Judge + 批量回归报告。
 - RAG 评测：Recall@K、Precision@K、MRR、NDCG@K、HitRate。
 
 ## 技术栈
@@ -34,6 +36,7 @@ Excel 台账：openpyxl
 前端：原生 HTML / CSS / JavaScript
 认证：Basic Auth
 工具协议：MCP
+评测与测试：自研 app/agent_eval（Hard Gate + Rubric Judge）、pytest、unittest
 ```
 
 说明：当前 Python 版只保留事件驱动多 Agent runtime，入口在 `app/agents/event_driven_runtime.py`。共享返回类型定义在 `app/agents/result.py`。RAG 默认使用 Chroma 本地持久化向量库做语义召回，同时用 BM25 做关键词召回，再融合并本地 rerank；未安装 Chroma、未配置 `OPENAI_API_KEY` 或向量服务异常时，会自动回退到本地 BM25 + `hybrid_score` reranker，避免演示环境中断。
@@ -42,26 +45,36 @@ Excel 台账：openpyxl
 
 ```text
 app/
+├── agent_eval/      # 离线评测：数据集加载、Trace 解析、Hard Gate、Rubric Judge、回放 testkit、CLI
 ├── agents/          # 事件驱动多 Agent runtime
 ├── api/             # FastAPI 路由
 ├── core/            # 配置、数据库、安全、启动初始化
+├── harness/         # 工程 harness（mock AI + 临时 SQLite 的全链路自检）
 ├── knowledge/       # 内置校园心理知识库
 ├── mcp_tools/       # MCP 工具服务
 ├── models/          # SQLAlchemy 实体
 ├── rag_eval/        # RAG 评测脚本和数据集
 ├── schemas/         # Pydantic DTO
-├── services/        # AI、聊天、知识库、评估、报告、工具服务
+├── services/        # AI、聊天、知识库、评估、报告、工具、Trace 服务
 └── static/          # 原生前端页面
 
 models/mindbridge-qwen2.5-7b-ft/
 ├── Modelfile        # Ollama 模型定义
 └── README.md        # GGUF 模型放置说明
 
+skills/              # 标准 Skill 包（*/SKILL.md，运行时加载）
+tests/
+├── eval/            # Golden Dataset（caretrace_gold.jsonl）与生成脚本
+└── test_*.py        # unittest 回归 + pytest Trace/评测场景
+reports/             # 离线评测报告输出（eval_report.json）
+
 scripts/
 ├── run-dev.sh
 ├── start-ollama.sh
 ├── create-finetuned-model.sh
-└── package-release.sh
+├── package-release.sh
+├── migrate_trace_v2.py   # Trace v2 数据库迁移（幂等）
+└── smoke_trace_v2.py     # Trace v2 冒烟脚本
 ```
 
 ## Agent loop
@@ -126,9 +139,7 @@ REDIS_MEMORY_MAX_MESSAGES=40
 
 完整聊天记录写入 MySQL 的 `chat_sessions`、`chat_messages` 等表。Redis 只保存每个会话最近 `REDIS_MEMORY_MAX_MESSAGES` 条短期上下文，并通过 `REDIS_MEMORY_TTL_SECONDS` 自动过期。
 
-## 
-
-默认账号：
+## 默认账号
 
 ```text
 student / student123
@@ -423,7 +434,7 @@ python -m pytest tests/ -q             # 全部测试（含 Trace/Eval 场景）
 - Agent runtime 调用和多 Agent 协作结果接入。
 - 心理报告落库和工具计划生成。
 - 学生与助手消息持久化。
-- Agent steps、知识召回、风险结果等 trace 数据输出。
+- Trace v2 落库：`finalize_trace` 在最终回复发送与工具执行之后写入 trace 主记录和全部事件（失败时落 `FAILED` + `error_json`）。
 
 因此 HTTP 层只负责认证和 SSE 流式输出，Agent 后处理逻辑集中在 runtime harness 内。
 
@@ -432,7 +443,7 @@ python -m pytest tests/ -q             # 全部测试（含 Trace/Eval 场景）
 项目提供一键工程 harness，用 mock AI、临时 SQLite、内存短期记忆和本地输出验证核心链路：
 
 - Risk Safety Harness：高风险识别、报告生成、后台元数据不外显、工具队列入队。
-- Agent Routing Harness：通过 `CareTraceAgentHarness` 验证 CHAT / CONSULT / RISK 路由和多 Agent 步骤。
+- Agent Routing Harness：通过 `MindBridgeAgentHarness` 验证 CHAT / CONSULT / RISK 路由和多 Agent 步骤。
 - Standard Skills Harness：验证 `skills/*/SKILL.md` 标准 Skill 加载、选择逻辑和交接摘要模板渲染。
 - RAG Harness：基于内置评测集验证 Recall@K、MRR、NDCG 和 HitRate。
 - API Harness：健康检查、认证授权、SSE 聊天、管理员知识库接口。
