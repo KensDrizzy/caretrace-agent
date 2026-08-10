@@ -231,6 +231,7 @@ def _llm_record_events(records: list) -> list[AgentEvent]:
                     "outputTokens": getattr(metrics, "output_tokens", None),
                     "errorType": getattr(metrics, "error_type", None),
                     "retryCount": getattr(metrics, "retry_count", 0),
+                    "truncated": getattr(metrics, "truncated", False),
                 },
                 duration_ms=getattr(metrics, "duration_ms", None),
             )

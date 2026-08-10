@@ -189,6 +189,7 @@ class MindBridgeAgentHarness:
     def save_assistant_message(self, user: UserAccount, session: ChatSession, content: str) -> None:
         self.save_message(user, session, MessageRole.ASSISTANT, content)
 
+# 聊天处理结束后，会根据风险报告调用
     async def dispatch_tools(self, tool_plan: AgentToolPlan) -> list[dict]:
         """执行回复后工具；返回结构化执行记录，任何失败都不中断主流程。"""
         if tool_plan.report_id is None:
@@ -196,6 +197,10 @@ class MindBridgeAgentHarness:
         if self.settings.tool_queue_enabled:
             started = time.perf_counter()
             try:
+                # enqueue_report() 根据风险等级创建不同任务：
+                # LOW	写入 Excel
+                # MEDIUM 写入 Excel、创建风险个案
+                # HIGH	写入 Excel、创建风险个案、发送预警
                 jobs = ToolQueueService(self.db, self.settings).enqueue_report(tool_plan.report_id, tool_plan.risk_level)
             except Exception as exc:
                 return [

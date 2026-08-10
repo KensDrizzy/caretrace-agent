@@ -62,6 +62,15 @@ def backfill_trace_id(conn, dialect: str) -> None:
         conn.execute(text("UPDATE agent_run_traces SET trace_id = REPLACE(UUID(), '-', '') WHERE trace_id IS NULL OR trace_id = ''"))
 
 
+def backfill_legacy_status(conn) -> None:
+    # 迁移前写入的历史行已完成整个对话回合，不应永远停留在默认的 RUNNING。
+    result = conn.execute(
+        text("UPDATE agent_run_traces SET status = 'COMPLETED' WHERE status = 'RUNNING' AND (final_response IS NULL OR final_response = '')")
+    )
+    if result.rowcount:
+        print(f"legacy rows marked COMPLETED: {result.rowcount}")
+
+
 def ensure_index(conn, dialect: str, name: str, ddl: str) -> None:
     # MySQL 的 CREATE INDEX 不支持 IF NOT EXISTS，失败（已存在）时忽略
     try:
@@ -97,6 +106,7 @@ def main() -> int:
                 print(f"column added: {name}")
             backfill_trace_id(conn, dialect)
             print("trace_id backfilled")
+            backfill_legacy_status(conn)
             ensure_index(conn, dialect, "ix_agent_run_traces_trace_id", "CREATE UNIQUE INDEX ix_agent_run_traces_trace_id ON agent_run_traces (trace_id)")
             ensure_index(conn, dialect, "ix_agent_run_traces_status", "CREATE INDEX ix_agent_run_traces_status ON agent_run_traces (status)")
 

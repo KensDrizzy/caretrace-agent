@@ -87,7 +87,7 @@ class ToolQueueWorker:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.stop_event = threading.Event()
-        self.dispatcher: threading.Thread | None = None
+        self.dispatcher: threading.Thread | None = None # 后台轮询机制
         self.excel_executor = ThreadPoolExecutor(
             max_workers=max(1, settings.tool_queue_excel_workers),
             thread_name_prefix="mindbridge-excel",
@@ -112,6 +112,7 @@ class ToolQueueWorker:
         self.excel_executor.shutdown(wait=False, cancel_futures=True)
         self.email_executor.shutdown(wait=False, cancel_futures=True)
 
+# 默认每隔 1 秒扫描一次数据库任务表。
     def _loop(self) -> None:
         while not self.stop_event.is_set():
             try:
@@ -146,6 +147,7 @@ class ToolQueueWorker:
         return self.email_executor
 
     def _run_job(self, job_id: int) -> None:
+        # 每个任务都会单独创建数据库连接
         db = SessionLocal()
         try:
             job = db.get(ToolJob, job_id)
@@ -182,15 +184,15 @@ class ToolQueueWorker:
         if report is None:
             raise RuntimeError(f"report {job.report_id} not found")
         tools = ToolOrchestrationService(db, self.settings)
-        if job.kind == ToolJobKind.EXCEL_REPORT.value:
+        if job.kind == ToolJobKind.EXCEL_REPORT.value: # 将心理报告写入风险台账excel报告。
             record = tools.write_excel(report)
             if record.status != ToolStatus.SUCCESS.value:
                 raise RuntimeError(record.message)
             return
-        if job.kind == ToolJobKind.CASE_CREATE.value:
+        if job.kind == ToolJobKind.CASE_CREATE.value: # 创建或复用一个风险个案。
             tools.create_case(report)
             return
-        if job.kind == ToolJobKind.ALERT_SEND.value:
+        if job.kind == ToolJobKind.ALERT_SEND.value: # 发送高风险预警
             case = tools.create_case(report)
             record = tools.send_case_alert(case)
             if record.status != ToolStatus.SUCCESS.value:

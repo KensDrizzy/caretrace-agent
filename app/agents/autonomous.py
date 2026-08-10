@@ -734,8 +734,13 @@ class ResponseAgent(BaseAutonomousAgent):
         llm_started = time.perf_counter()
         degraded = False
         error_type = None
+        truncated = False
         try:
             text = self.client().complete(messages).strip()
+            records = self.services.llm_call_records
+            if records:
+                latest_metrics = records[-1].get("metrics") if isinstance(records[-1], dict) else records[-1]
+                truncated = bool(getattr(latest_metrics, "truncated", False))
         except Exception as exc:
             degraded = True
             error_type = type(exc).__name__
@@ -743,6 +748,10 @@ class ResponseAgent(BaseAutonomousAgent):
         if not text:
             degraded = True
             text = fallback_response_text(risk)
+        if truncated:
+            # 输出被 max_tokens 截断：文本不完整但已生成，标记进 trace 供观测与评测，
+            # 不降级（截断文本仍是模型真实输出，由安全审核决定是否可用）。
+            self.remember("response truncated by max_tokens")
         llm_duration_ms = (time.perf_counter() - llm_started) * 1000.0
         revision_of = str(task.metadata.get("revisionOf") or "")
         previous = next((artifact for artifact in board.artifacts if artifact.id == revision_of), None) if revision_of else None
@@ -759,12 +768,16 @@ class ResponseAgent(BaseAutonomousAgent):
         if degraded:
             payload["degraded"] = True
             payload["errorType"] = error_type
+        if truncated:
+            payload["truncated"] = True
         metadata = {"mode": mode, "version": version}
         if revision_of:
             metadata["revisionOf"] = revision_of
         if degraded:
             metadata["degraded"] = True
             metadata["errorType"] = error_type
+        if truncated:
+            metadata["truncated"] = True
         artifact = replace(self._artifact("response_candidate", payload, task, 0.86, metadata), version=version)
         self.remember(f"response mode={mode}; intent={intent.value}; risk={risk.value}; degraded={degraded}")
         return AgentTurnResult(
@@ -775,8 +788,8 @@ class ResponseAgent(BaseAutonomousAgent):
                     actor=self.name,
                     task_id=task.id,
                     artifact_id=artifact.id,
-                    message=f"response candidate generated mode={mode} degraded={degraded}",
-                    metadata={"mode": mode, "degraded": degraded, "version": version},
+                    message=f"response candidate generated mode={mode} degraded={degraded} truncated={truncated}",
+                    metadata={"mode": mode, "degraded": degraded, "version": version, "truncated": truncated},
                     duration_ms=llm_duration_ms,
                     round=board.current_round,
                 ),
@@ -795,6 +808,7 @@ class ResponseAgent(BaseAutonomousAgent):
 
 
 class CoordinatorAgent(BaseAutonomousAgent):
+    # AgentProfile：Agent 的“静态身份证 + 配置描述”。
     profile = AgentProfile(
         name="CoordinatorAgent",
         capabilities=frozenset({AgentCapability.COORDINATION}),

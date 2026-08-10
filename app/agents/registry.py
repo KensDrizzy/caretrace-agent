@@ -49,6 +49,12 @@ class AgentCandidate:
     decision: AgentDecision
 
 
+# 主要提供registry.evaluate_decisions_for(task, board)
+# 遍历所有 Agent；
+# 检查 Agent 是否具备任务要求的能力；
+# 调用符合能力的 Agent 的 decide()；
+# 收集它们是否愿意认领任务；
+# 按 confidence 排序。
 class AgentRegistry:
     def __init__(self, agents: list[AutonomousAgent]):
         self._agents = list(agents)

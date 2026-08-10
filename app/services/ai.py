@@ -89,6 +89,7 @@ class LlmCallMetrics:
     output_tokens: int | None = None
     error_type: str | None = None
     retry_count: int = 0
+    truncated: bool = False  # finish_reason/done_reason == "length"，输出被 max_tokens 截断
 
 
 class AiClient:
@@ -101,15 +102,15 @@ class AiClient:
         started = time.perf_counter()
         try:
             if provider == "ollama":
-                content, input_tokens, output_tokens = self._ollama(messages, stream=False)
+                content, input_tokens, output_tokens, truncated = self._ollama(messages, stream=False)
             elif provider in {"openai", "deepseek"}:
-                content, input_tokens, output_tokens = self._openai(messages, stream=False, use_deepseek=provider == "deepseek")
+                content, input_tokens, output_tokens, truncated = self._openai(messages, stream=False, use_deepseek=provider == "deepseek")
             else:
-                content, input_tokens, output_tokens = self._mock(messages), None, None
+                content, input_tokens, output_tokens, truncated = self._mock(messages), None, None, False
         except Exception as exc:
             self._emit_metrics(provider, started, status="ERROR", error_type=type(exc).__name__)
             raise
-        self._emit_metrics(provider, started, status="OK", input_tokens=input_tokens, output_tokens=output_tokens)
+        self._emit_metrics(provider, started, status="OK", input_tokens=input_tokens, output_tokens=output_tokens, truncated=truncated)
         return content
 
     def _emit_metrics(
@@ -120,6 +121,7 @@ class AiClient:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         error_type: str | None = None,
+        truncated: bool = False,
     ) -> None:
         if self.metrics_hook is None:
             return
@@ -132,6 +134,7 @@ class AiClient:
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     error_type=error_type,
+                    truncated=truncated,
                 )
             )
         except Exception:
@@ -160,7 +163,7 @@ class AiClient:
         for chunk in split_text(text, 12):
             yield chunk
 
-    def _ollama(self, messages: list[AiMessage], stream: bool) -> tuple[str, int | None, int | None]:
+    def _ollama(self, messages: list[AiMessage], stream: bool) -> tuple[str, int | None, int | None, bool]:
         payload = {
             "model": self.settings.ollama_model,
             "messages": [m.model_dump() for m in messages],
@@ -179,7 +182,8 @@ class AiClient:
                 raise ModelNotFoundError(f"模型未找到：{self.settings.ollama_model}。请运行 create-finetuned-model.sh 或检查 Ollama 模型列表。") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
         data = response.json()
-        return data["message"]["content"], data.get("prompt_eval_count"), data.get("eval_count")
+        truncated = data.get("done_reason") == "length"
+        return data["message"]["content"], data.get("prompt_eval_count"), data.get("eval_count"), truncated
 
     async def _ollama_stream(self, messages: list[AiMessage]):
         payload = {
@@ -207,7 +211,7 @@ class AiClient:
                 raise ModelNotFoundError(f"模型未找到：{self.settings.ollama_model}。请运行 create-finetuned-model.sh 或检查 Ollama 模型列表。") from exc
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
 
-    def _openai(self, messages: list[AiMessage], stream: bool, use_deepseek: bool = False) -> tuple[str, int | None, int | None]:
+    def _openai(self, messages: list[AiMessage], stream: bool, use_deepseek: bool = False) -> tuple[str, int | None, int | None, bool]:
         base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url
         api_key = self.settings.deepseek_api_key if use_deepseek else self.settings.openai_api_key
         model = self.settings.deepseek_model if use_deepseek else self.settings.openai_model
@@ -215,10 +219,14 @@ class AiClient:
         payload = {
             "model": model,
             "messages": [m.model_dump() for m in messages],
-            "temperature": self.settings.ai_temperature,
-            "max_tokens": self.settings.ai_max_tokens,
             "stream": stream,
         }
+        if _is_gpt5_model(model):
+            payload["max_completion_tokens"] = self.settings.ai_max_tokens
+            payload["reasoning_effort"] = self.settings.openai_reasoning_effort
+        else:
+            payload["temperature"] = self.settings.ai_temperature
+            payload["max_tokens"] = self.settings.ai_max_tokens
         try:
             response = get_sync_client(self.settings).post(f"{base_url}/chat/completions", headers=headers, json=payload)
             response.raise_for_status()
@@ -232,7 +240,9 @@ class AiClient:
             raise AiError(f"模型服务错误 ({exc.response.status_code})") from exc
         data = response.json()
         usage = data.get("usage") or {}
-        return data["choices"][0]["message"]["content"], usage.get("prompt_tokens"), usage.get("completion_tokens")
+        choice = data["choices"][0]
+        truncated = choice.get("finish_reason") == "length"
+        return choice["message"]["content"], usage.get("prompt_tokens"), usage.get("completion_tokens"), truncated
 
     async def _openai_stream(self, messages: list[AiMessage], use_deepseek: bool = False):
         base_url = self.settings.deepseek_base_url if use_deepseek else self.settings.openai_base_url
@@ -242,10 +252,14 @@ class AiClient:
         payload = {
             "model": model,
             "messages": [m.model_dump() for m in messages],
-            "temperature": self.settings.ai_temperature,
-            "max_tokens": self.settings.ai_max_tokens,
             "stream": True,
         }
+        if _is_gpt5_model(model):
+            payload["max_completion_tokens"] = self.settings.ai_max_tokens
+            payload["reasoning_effort"] = self.settings.openai_reasoning_effort
+        else:
+            payload["temperature"] = self.settings.ai_temperature
+            payload["max_tokens"] = self.settings.ai_max_tokens
         try:
             async with get_async_client(self.settings).stream("POST", f"{base_url}/chat/completions", headers=headers, json=payload) as response:
                 response.raise_for_status()
@@ -329,6 +343,11 @@ def has_consult_signal(text: str) -> bool:
 def split_text(text: str, size: int) -> Iterable[str]:
     for index in range(0, len(text), size):
         yield text[index:index + size]
+
+
+def _is_gpt5_model(model: str) -> bool:
+    """GPT-5-family Chat Completions use reasoning/max-completion parameters."""
+    return model.strip().lower().startswith("gpt-5")
 
 
 def _mock_rewrite_query(current: str) -> str:

@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     agent_model_response_model: str = ""
     ai_provider: str = "ollama"
     ai_temperature: float = 0.35
-    ai_max_tokens: int = 512
+    ai_max_tokens: int = 2048
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "mindbridge-qwen2.5-7b-ft:latest"
     finetuned_model_name: str = "mindbridge-qwen2.5-7b-ft:latest"
@@ -32,13 +32,16 @@ class Settings(BaseSettings):
     finetuned_model_file: str = "mindbridge-qwen2.5-7b-ft-q4_k_m.gguf"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5.6-luna"
+    openai_reasoning_effort: str = "none"
     openai_embedding_model: str = "text-embedding-3-small"
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-v4-flash"
     database_url: str = "mysql+pymysql://mindbridge:mindbridge@127.0.0.1:3306/mindbridge?charset=utf8mb4"
     chat_history_limit: int = 10
+    # 已审核文本重放的打字机节奏（毫秒/块，0 表示不节流）
+    chat_stream_chunk_delay_ms: float = 25.0
     knowledge_top_k: int = 4
     knowledge_candidate_k: int = 16
     knowledge_chunk_size: int = 512

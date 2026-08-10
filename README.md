@@ -296,7 +296,8 @@ event_driven_multi_agent
 ```bash
 AI_PROVIDER=openai \
 OPENAI_API_KEY=你的_API_Key \
-OPENAI_MODEL=gpt-4o-mini \
+OPENAI_MODEL=gpt-5.6-luna \
+OPENAI_REASONING_EFFORT=none \
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small \
 uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```

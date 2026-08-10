@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
             response.headers["Cache-Control"] = "no-store"
         return response
 
+# 启动时自执行
     @app.on_event("startup")
     def startup() -> None:
         settings = get_settings()

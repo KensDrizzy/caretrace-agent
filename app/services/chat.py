@@ -41,19 +41,30 @@ class ChatService:
 
         yield sse("meta", ChatStreamEvent(type="meta", sessionId=outcome.session.public_id).model_dump(by_alias=True))
         try:
-            # 直接发送 ResponseAgent 生成、SafetyAgent 审核过的同一份文本，不再调用模型
+            # 直接发送 ResponseAgent 生成、SafetyAgent 审核过的同一份文本，不再调用模型；
+            # 按块节流重放，前端呈现打字机效果（发送内容与审核文本逐字一致）。
+            chunk_delay = max(0.0, float(getattr(self.settings, "chat_stream_chunk_delay_ms", 0.0))) / 1000.0
             for chunk in split_text(outcome.final_response, 12):
                 yield sse("token", ChatStreamEvent(type="token", sessionId=outcome.session.public_id, content=chunk).model_dump())
+                if chunk_delay:
+                    await asyncio.sleep(chunk_delay)
             if outcome.final_response:
                 self.agent_harness.save_assistant_message(user, outcome.session, outcome.final_response)
             tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
         except Exception as exc:
             logger.exception("Post-harness stage failed for session=%s", outcome.session.public_id)
-            self.agent_harness.finalize_trace(outcome, [], error=exc)
+            self._finalize_safely(outcome, [], error=exc)
             yield sse("error", ChatStreamEvent(type="error", sessionId=outcome.session.public_id, message="处理失败，请稍后再试").model_dump())
             return
-        self.agent_harness.finalize_trace(outcome, tool_records)
+        # Trace 落库失败不应打断学生端已完成的回复流，只记录日志。
+        self._finalize_safely(outcome, tool_records)
         yield sse("done", ChatStreamEvent(type="done", sessionId=outcome.session.public_id).model_dump())
+
+    def _finalize_safely(self, outcome, tool_records: list[dict], error: Exception | None = None) -> None:
+        try:
+            self.agent_harness.finalize_trace(outcome, tool_records, error=error)
+        except Exception:
+            logger.exception("finalize_trace failed for session=%s", outcome.session.public_id)
 
 
 def sse(event: str, data: dict) -> str:
