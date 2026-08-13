@@ -61,10 +61,14 @@ class ChatService:
         yield sse("done", ChatStreamEvent(type="done", sessionId=outcome.session.public_id).model_dump())
 
     def _finalize_safely(self, outcome, tool_records: list[dict], error: Exception | None = None) -> None:
+        session_id = outcome.session.public_id
         try:
             self.agent_harness.finalize_trace(outcome, tool_records, error=error)
         except Exception:
-            logger.exception("finalize_trace failed for session=%s", outcome.session.public_id)
+            # A failed flush leaves SQLAlchemy in pending-rollback state. Trace
+            # persistence is best-effort and must never break the SSE response.
+            self.db.rollback()
+            logger.exception("finalize_trace failed for session=%s", session_id)
 
 
 def sse(event: str, data: dict) -> str:

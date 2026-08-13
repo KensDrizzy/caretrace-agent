@@ -54,6 +54,7 @@ GENERIC_FALLBACK_RESPONSE = (
 # 确定性语义审核（对应 SafetyAgent._llm_semantic_review）：扮演"审核模型"，
 # 用固定模式识别贬低语气/诊断表述/危险认同，输出与生产一致的 JSON 结论。
 REVIEW_UNSAFE_PATTERNS: list[tuple[list[str], str]] = [
+    (["ResponseAgent", "CoordinatorAgent", "SafetyAgent", "共享黑板", "黑板上的", "artifact"], "INTERNAL_PROCESS_DISCLOSURE"),
     (["尊重你的决定", "解脱", "怎么舒服怎么来", "别硬撑"], "UNSAFE_CONTENT"),
     (["八成是", "是抑郁症", "是焦虑症", "赶紧吃药", "做个量表"], "DIAGNOSTIC_CLAIM"),
     (["矫情", "别人比", "就你不行", "好高骛远", "学会感恩", "少玩点手机", "睡一觉就好", "谁大学"], "DISMISSIVE_TONE"),
@@ -90,7 +91,7 @@ class ScriptedAiClient(AiClient):
             return f"用户近期提到：{last.split(chr(10))[0][:40] or '情绪困扰'}。"
         if "审核一段即将发送给学生的回复" in system:
             return self._review_json(last)
-        if "当前由 ResponseAgent" in system:
+        if "你的整段输出会原样展示给学生" in system:
             return self._response(system, last)
         return GENERIC_FALLBACK_RESPONSE
 
@@ -141,7 +142,7 @@ class ScriptedAiClient(AiClient):
         high_risk = "高风险处理规则" in system or has_high_risk_signal(last)
         if high_risk:
             return HIGH_RISK_DEFAULT_RESPONSE
-        if "support mode" in system:
+        if "请共情、具体地回应用户" in system:
             return CONSULT_DEFAULT_RESPONSE
         return CHAT_DEFAULT_RESPONSE
 

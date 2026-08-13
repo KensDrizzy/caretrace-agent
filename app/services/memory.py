@@ -8,7 +8,7 @@ from importlib import import_module
 from typing import Protocol
 
 from app.core.config import Settings
-from app.models.entities import ChatMessage, now
+from app.models.entities import ChatMessage, ChatSession, now
 from app.schemas.dtos import AiMessage
 from app.services.privacy import PrivacySanitizer
 
@@ -114,6 +114,40 @@ class RedisShortTermMemoryStore:
 
     def _key(self, session_public_id: str) -> str:
         return f"mindbridge:short-term-memory:{session_public_id}"
+
+
+def load_conversation_history(
+    db,
+    memory: RedisShortTermMemoryStore,
+    session: ChatSession,
+    limit: int,
+) -> list[AiMessage]:
+    """Load prior messages for one session with Redis as a fallback cache.
+
+    MySQL remains the durable source and is queried with an explicit session
+    boundary. Redis is warmed from successful reads and used only if the
+    database query is unavailable.
+    The current user message is intentionally not included; the runtime adds it
+    after compaction so it appears exactly once in the model prompt.
+    """
+
+    bounded_limit = max(2, int(limit))
+    try:
+        rows = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session.id)
+            .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+            .limit(bounded_limit)
+            .all()
+        )
+    except Exception as exc:
+        logger.warning("MySQL history read unavailable; using Redis cache: %s", exc)
+        return list(memory.load_recent(session.public_id))[-bounded_limit:]
+    rows.reverse()
+    history = memory.messages_from_rows(rows)
+    if history:
+        memory.replace(session.public_id, history)
+    return history
 
 
 def compact_history_for_prompt(

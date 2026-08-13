@@ -29,7 +29,7 @@ from app.schemas.dtos import AiMessage
 from app.services.agent_models import AgentModelRegistry
 from app.services.ai import AiClient, PromptTemplates
 from app.services.knowledge import KnowledgeService, SearchResult
-from app.services.memory import RedisShortTermMemoryStore
+from app.services.memory import RedisShortTermMemoryStore, compact_history_for_prompt, load_conversation_history
 
 
 # 这是真正的 事件驱动多 Agent 运行时。一次调用会走完一整轮 Agent 协作流程，
@@ -54,6 +54,20 @@ class EventDrivenAgentRuntimeService:
 
     def run(self, user: UserAccount, session: ChatSession, original_input: str, model_input: str) -> AgentRunResult:
         started_at = now_cn()
+        conversation_history = load_conversation_history(
+            self.db,
+            self.memory,
+            session,
+            self.settings.redis_memory_max_messages,
+        )
+        compacted_history, memory_brief = compact_history_for_prompt(
+            conversation_history,
+            self.settings,
+            model_input,
+        )
+        model_history = self._bounded_model_history(
+            [*compacted_history, AiMessage(role="user", content=model_input)]
+        )
         # AgentRuntimeServices时共享服务包
         # 把所有外部依赖（数据库、AI 客户端、记忆、知识库、模型注册表）打包，后续各 Agent 共用。
         services = AgentRuntimeServices(
@@ -89,6 +103,9 @@ class EventDrivenAgentRuntimeService:
             session_id=session.public_id,
             user_input=original_input,
             model_input=model_input,
+            conversation_history=tuple(conversation_history),
+            model_history=tuple(model_history),
+            memory_brief=memory_brief,
         )
         # 发布开始事件
         board = board.append_event(
@@ -106,6 +123,14 @@ class EventDrivenAgentRuntimeService:
         # 运行时异常不在此处吞掉，由 harness 落 FAILED trace 后继续抛出
         return self._to_result(final_board, user, services, started_at)
 
+    def _bounded_model_history(self, history: list[AiMessage]) -> list[AiMessage]:
+        limit = max(2, self.settings.chat_history_limit * 2)
+        if len(history) <= limit:
+            return history
+        if history[0].role == "system":
+            return [history[0], *history[-(limit - 1):]]
+        return history[-limit:]
+
     def _to_result(
         self,
         board: CollaborationBlackboard,
@@ -120,7 +145,7 @@ class EventDrivenAgentRuntimeService:
         # 只采纳经 Coordinator 接受（即已通过对应版本安全审核）的候选；
         # 未采纳的候选文本绝不能作为最终回复发送（未审核内容不得放行）。
         accepted = board.accepted_artifact()
-        memory_brief = "无相关历史记忆。"
+        memory_brief = board.memory_brief or "无相关历史记忆。"
         retrieved: list[SearchResult] = []
         response_messages: list[AiMessage] = []
         if context:

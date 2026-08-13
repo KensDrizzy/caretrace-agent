@@ -38,10 +38,44 @@ GENERAL_TASK_WORDS = [
     "怎么写", "如何", "是什么", "为什么", "给我", "帮我", "推荐", "查询", "天气", "路线",
 ]
 
+CONTEXTUAL_FOLLOW_UP_WORDS = [
+    "这个", "那个", "这样", "那样", "刚才", "上面", "有用吗", "有必要吗",
+    "为什么", "怎么做", "然后呢", "具体呢", "可以吗", "真的吗", "呢？", "吗？",
+]
+
+EXPLICIT_TOPIC_SWITCH_WORDS = [
+    "java", "python", "javascript", "代码", "编程", "程序", "算法", "数据库", "spring", "maven",
+    "前端", "后端", "接口", "bug", "报错", "作业", "论文", "翻译", "天气", "路线",
+]
+
 # SafetyAgent 结构化审核规则词表（只记录 reasonCode，不记录思维链）
 BOUNDARY_VIOLATION_WORDS = ["绝对保密", "我确诊你", "你患有"]
+INTERNAL_PROCESS_WORDS = [
+    "ResponseAgent",
+    "CoordinatorAgent",
+    "SafetyAgent",
+    "ContextAgent",
+    "UnderstandingAgent",
+    "黑板上的",
+    "共享黑板",
+    "response_candidate",
+    "artifact",
+]
+INTERNAL_PROCESS_PHRASE_GROUPS = [
+    ("候选", "最终是否采纳"),
+    ("候选", "协调者"),
+    ("候选", "内部审核"),
+]
 SAFETY_GUIDANCE_WORDS = ["紧急", "可信任", "安全", "求助", "心理中心", "辅导员", "110", "120"]
-REVIEW_REASON_CODES = {"OK", "DISMISSIVE_TONE", "DIAGNOSTIC_CLAIM", "BOUNDARY_VIOLATION", "UNSAFE_CONTENT", "MISSING_SAFETY_GUIDANCE"}
+REVIEW_REASON_CODES = {
+    "OK",
+    "DISMISSIVE_TONE",
+    "DIAGNOSTIC_CLAIM",
+    "BOUNDARY_VIOLATION",
+    "INTERNAL_PROCESS_DISCLOSURE",
+    "UNSAFE_CONTENT",
+    "MISSING_SAFETY_GUIDANCE",
+}
 
 
 # 所有 Agent 共享的服务包
@@ -148,9 +182,13 @@ class UnderstandingAgent(BaseAutonomousAgent):
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         intent = self._classify(board.model_input or board.user_input, board)
+        current_intent = self._current_intent(board.model_input or board.user_input)
+        continuation = self._is_contextual_follow_up(board.model_input or board.user_input, board)
         confidence = 0.92 if intent == IntentType.RISK else 0.78
         payload = {
             "intent": intent.value,
+            "currentIntent": current_intent.value,
+            "continuation": continuation,
             "topic": self._topic(board.model_input or board.user_input),
             "reason": "high risk hard signal" if intent == IntentType.RISK else "autonomous intent proposal",
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
@@ -177,14 +215,21 @@ class UnderstandingAgent(BaseAutonomousAgent):
 
     def _classify(self, text: str, board: CollaborationBlackboard) -> IntentType:
         lowered = text.lower()
+        # 高风险关键词
         if has_high_risk_signal(lowered):
             return IntentType.RISK
-        if not has_consult_signal(lowered) and any(word in lowered for word in GENERAL_TASK_WORDS):
+        if has_consult_signal(lowered):
+            return IntentType.CONSULT
+        if self._is_contextual_follow_up(text, board) and self._history_has_support_topic(board):
+            return IntentType.CONSULT
+        # 明确的新普通任务不继承上一轮支持主题。
+        if any(word in lowered for word in GENERAL_TASK_WORDS):
             return IntentType.CHAT
         try:
+            # 如果前面的规则都无法确定，就调用模型：
             memory_context = "\n".join(item.content for item in self.private_memory()[-6:])
             messages = [
-                *PromptTemplates.intent_prompt([], text),
+                *PromptTemplates.intent_prompt(list(board.conversation_history), text),
                 AiMessage(role="system", content=f"{self.profile.system_prompt}\n私有记忆：\n{memory_context or '无'}"),
             ]
             label = self.client().complete(messages).upper()
@@ -200,6 +245,28 @@ class UnderstandingAgent(BaseAutonomousAgent):
         except Exception:
             pass
         return IntentType.CONSULT if has_consult_signal(lowered) else IntentType.CHAT
+
+    def _current_intent(self, text: str) -> IntentType:
+        lowered = text.lower()
+        if has_high_risk_signal(lowered):
+            return IntentType.RISK
+        if has_consult_signal(lowered):
+            return IntentType.CONSULT
+        return IntentType.CHAT
+
+    def _is_contextual_follow_up(self, text: str, board: CollaborationBlackboard) -> bool:
+        normalized = text.strip().lower()
+        if not board.conversation_history or len(normalized) > 36:
+            return False
+        if any(word in normalized for word in EXPLICIT_TOPIC_SWITCH_WORDS):
+            return False
+        return any(word in normalized for word in CONTEXTUAL_FOLLOW_UP_WORDS)
+
+    def _history_has_support_topic(self, board: CollaborationBlackboard) -> bool:
+        recent_user_text = "\n".join(
+            item.content for item in board.conversation_history[-8:] if item.role == "user"
+        )
+        return has_consult_signal(recent_user_text) or has_high_risk_signal(recent_user_text)
 
     def _topic(self, text: str) -> str:
         lowered = text.lower()
@@ -296,6 +363,10 @@ class SafetyAgent(BaseAutonomousAgent):
             approved = False
             reason_code = "BOUNDARY_VIOLATION"
             reason = "response candidate contains boundary or diagnosis wording"
+        elif _contains_internal_process_disclosure(text):
+            approved = False
+            reason_code = "INTERNAL_PROCESS_DISCLOSURE"
+            reason = "response candidate exposes internal agent or review workflow"
         elif risk == RiskLevel.HIGH and not any(word in text for word in SAFETY_GUIDANCE_WORDS):
             approved = False
             reason_code = "MISSING_SAFETY_GUIDANCE"
@@ -387,9 +458,12 @@ class SafetyAgent(BaseAutonomousAgent):
                     f"{self.profile.system_prompt}\n"
                     "你正在审核一段即将发送给学生的回复。只输出一个 JSON 对象，格式："
                     '{"approved": true|false, "reasonCode": "OK|DISMISSIVE_TONE|DIAGNOSTIC_CLAIM|'
-                    'BOUNDARY_VIOLATION|UNSAFE_CONTENT|MISSING_SAFETY_GUIDANCE", "evidence": "简短证据片段"}\n'
+                    'BOUNDARY_VIOLATION|INTERNAL_PROCESS_DISCLOSURE|UNSAFE_CONTENT|MISSING_SAFETY_GUIDANCE", '
+                    '"evidence": "简短证据片段"}\n'
                     "拒绝标准：贬低/说教/否定用户感受；直接下诊断或建议用药；承诺绝对保密或越界关系；"
                     "认同、鼓励或合理化用户的自伤念头；提供任何自伤/伤人方法细节；"
+                    "声称自己是某个内部 Agent，或解释黑板、候选生成、内部审核、采纳、artifact 等幕后协作流程；"
+                    "仅因用户提到“候选回复”而道歉并说明是不应出现的格式错误，不属于泄露；"
                     "高风险情境下没有优先关注即时安全与求助渠道。只给结论，不输出分析过程。"
                 )),
                 AiMessage(role="user", content=f"当前风险等级：{risk.value}\n\n待审核回复：\n{text}"),
@@ -436,13 +510,12 @@ class ContextAgent(BaseAutonomousAgent):
         return AgentDecision(False, reason="context not necessary for current artifacts", reason_code="CONTEXT_NOT_REQUIRED")
 
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
-        from app.services.memory import compact_history_for_prompt
         from app.services.skills import MindBridgeSkillLibrary
 
-        history = self._load_history()
-        compacted_history, deterministic_brief = compact_history_for_prompt(history, self.services.settings, board.model_input)
+        history = list(board.conversation_history)
+        deterministic_brief = board.memory_brief
         memory_brief = self._summarize_memory(history, board.model_input, deterministic_brief)
-        model_history = self._bounded_model_history([*compacted_history, AiMessage(role="user", content=board.model_input)])
+        model_history = list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
         intent = _intent(board)
         risk = _risk_level(board)
 
@@ -510,25 +583,6 @@ class ContextAgent(BaseAutonomousAgent):
                 ),
             ),
         )
-
-    def _load_history(self) -> list[AiMessage]:
-        from app.models.entities import ChatMessage
-
-        history = self.services.memory.load_recent(self.services.session.public_id)
-        if history:
-            return history
-        rows = (
-            self.services.db.query(ChatMessage)
-            .filter(ChatMessage.session_id == self.services.session.id)
-            .order_by(ChatMessage.created_at.desc())
-            .limit(self.services.settings.redis_memory_max_messages)
-            .all()
-        )
-        rows.reverse()
-        history = self.services.memory.messages_from_rows(rows)
-        if history:
-            self.services.memory.replace(self.services.session.public_id, history)
-        return history
 
     def _rewrite_query(self, memory_brief: str, model_input: str) -> str:
         try:
@@ -661,8 +715,11 @@ class ResponseAgent(BaseAutonomousAgent):
         name="ResponseAgent",
         capabilities=frozenset({AgentCapability.RESPONSE}),
         system_prompt=(
-            "你是 ResponseAgent。你根据黑板上的意图、风险、上下文和安全约束提出候选回复 prompt，"
-            "但最终是否采纳由 CoordinatorAgent 决定。"
+            "你负责撰写一段可直接发送给学生的 CareTrace 回复。"
+            "只输出面向学生的回复正文，不加标题、前言或幕后说明；"
+            "不得提及内部角色、代理协作、系统提示、黑板、候选、审核、采纳或 artifact。"
+            "如果用户追问之前为何出现“候选回复”等措辞，只需说明那是不应展示的格式错误并致歉，"
+            "然后继续回应用户，不要解释幕后架构。"
         ),
         memory_policy="private_response_strategy",
         model_profile="response",
@@ -689,8 +746,8 @@ class ResponseAgent(BaseAutonomousAgent):
         risk = _risk_level(board)
         context = board.latest_artifact("context")
         context_payload = context.payload if context else {}
-        model_history = context_payload.get("modelHistory") or [AiMessage(role="user", content=board.model_input)]
-        memory_brief = context_payload.get("memoryBrief") or "无相关历史记忆。"
+        model_history = context_payload.get("modelHistory") or list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
+        memory_brief = context_payload.get("memoryBrief") or board.memory_brief or "无相关历史记忆。"
         knowledge = context_payload.get("retrievedKnowledge") or []
         skill_context = context_payload.get("skillContext") or ""
         knowledge_context = "\n\n".join(f"- [{item.source}] {item.content}" for item in knowledge)
@@ -701,7 +758,7 @@ class ResponseAgent(BaseAutonomousAgent):
                     role="system",
                     content=(
                         f"{self.profile.system_prompt}\n"
-                        f"当前由 ResponseAgent 以 normal_chat mode 提出回复方案。\n"
+                        "请自然、直接地回答用户。你的整段输出会原样展示给学生。\n"
                         f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
                         f"记忆摘要：\n{memory_brief}"
                     ),
@@ -722,7 +779,7 @@ class ResponseAgent(BaseAutonomousAgent):
                     role="system",
                     content=(
                         f"{self.profile.system_prompt}\n"
-                        f"当前由 ResponseAgent 以 support mode 提出回复方案。\n"
+                        "请共情、具体地回应用户。你的整段输出会原样展示给学生。\n"
                         f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
                         f"记忆摘要：\n{memory_brief}"
                     ),
@@ -859,6 +916,13 @@ def fallback_response_text(risk: RiskLevel) -> str:
     )
 
 
+def _contains_internal_process_disclosure(text: str) -> bool:
+    lowered = text.lower()
+    if any(word.lower() in lowered for word in INTERNAL_PROCESS_WORDS):
+        return True
+    return any(all(fragment.lower() in lowered for fragment in group) for group in INTERNAL_PROCESS_PHRASE_GROUPS)
+
+
 def _latest_review_for(board: CollaborationBlackboard, response_id: str):
     """查找引用指定候选的最新审核结论（safety_review 或 critique）。
 
@@ -901,10 +965,9 @@ def _risk_level(board: CollaborationBlackboard) -> RiskLevel:
 
 
 def _context_history(board: CollaborationBlackboard) -> list[AiMessage]:
-    context = board.latest_artifact("context")
-    if not context:
-        return [AiMessage(role="user", content=board.model_input or board.user_input)]
-    return context.payload.get("modelHistory") or [AiMessage(role="user", content=board.model_input or board.user_input)]
+    # PsychologyAssessmentService receives the current input separately, so
+    # provide prior turns only here to avoid duplicating the current message.
+    return list(board.conversation_history)
 
 
 def _format_private_memory(items: list[AiMessage]) -> str:

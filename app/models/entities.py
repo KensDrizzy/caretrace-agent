@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -196,9 +197,9 @@ class AgentRunTrace(Base):
     original_input: Mapped[str] = mapped_column(Text)
     sanitized_input: Mapped[str] = mapped_column(Text)
     memory_brief: Mapped[str] = mapped_column(Text, default="")
-    agent_steps_json: Mapped[str] = mapped_column(Text, default="[]")
-    retrieved_knowledge_json: Mapped[str] = mapped_column(Text, default="[]")
-    response_messages_json: Mapped[str] = mapped_column(Text, default="[]")
+    agent_steps_json: Mapped[str] = mapped_column(Text().with_variant(MEDIUMTEXT(), "mysql"), default="[]")
+    retrieved_knowledge_json: Mapped[str] = mapped_column(Text().with_variant(MEDIUMTEXT(), "mysql"), default="[]")
+    response_messages_json: Mapped[str] = mapped_column(Text().with_variant(MEDIUMTEXT(), "mysql"), default="[]")
     assessment_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     # trace v2 字段（旧列保留以兼容 admin 页面）
@@ -246,4 +247,3 @@ class ToolAuditRecord(Base):
     payload: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-

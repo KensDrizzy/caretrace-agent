@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.timezone import now_cn
+from app.schemas.dtos import AiMessage
 
 
 class AgentEventType(str, Enum):
@@ -77,8 +78,11 @@ class AgentTask:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def claim(self, agent_name: str) -> "AgentTask":
+        # 检查传入的 agent_name 是否已经在该任务的 claimed_by 列表/元组中。
+        # 目的：避免重复将同一个 agent 加入 claimed_by，做去重判断。
         if agent_name in self.claimed_by:
             return self
+        # 如果还没认领，就创建一个新对象（status 变为 CLAIMED，claimed_by 追加该 agent），并把这个新对象返回。
         return replace(self, status=TaskStatus.CLAIMED, claimed_by=(*self.claimed_by, agent_name))
 
     def reopen(self) -> "AgentTask":
@@ -151,6 +155,12 @@ class CollaborationBlackboard:
     session_id: str = ""
     user_input: str = ""
     model_input: str = ""
+    # Every turn receives bounded conversation history before any agent runs.
+    # This is independent from ContextAgent/RAG so ordinary chat can still
+    # resolve follow-up references such as "这个有用吗？".
+    conversation_history: tuple[AiMessage, ...] = field(default_factory=tuple)
+    model_history: tuple[AiMessage, ...] = field(default_factory=tuple)
+    memory_brief: str = "无相关历史记忆。"
     tasks: dict[str, AgentTask] = field(default_factory=dict)
     messages: tuple[AgentMessage, ...] = field(default_factory=tuple)
     artifacts: tuple[AgentArtifact, ...] = field(default_factory=tuple)

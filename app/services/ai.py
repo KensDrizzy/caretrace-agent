@@ -299,9 +299,9 @@ class AiClient:
             return "CHAT"
         if "high_risk_safety_plan" in system and has_high_risk_signal(last):
             return "我听到你现在已经痛苦到觉得撑不下去了。现在最重要的是先让你不要一个人扛：请马上联系身边可信任的人，或者直接联系辅导员、学校心理中心、校园保卫/当地紧急服务。接下来 10 分钟，请先把自己移到有人在的地方，并把可能伤害自己的东西放远一点。如果可以，回我一句：你现在身边有没有可以马上联系或走过去找的人？"
-        if "当前由 ResponseAgent 以 support mode" in system:
+        if "请共情、具体地回应用户" in system:
             return "我听到你最近压力很大，还影响到了睡眠，这种状态确实会让人很消耗。你可以先做两件小事：今晚把最担心的事情写成清单，先只选一个最小步骤处理；睡前 30 分钟把手机和学习任务放远一点，用缓慢呼吸或热水澡帮身体降下来。如果这种失眠持续一周以上，建议联系学校心理中心或辅导员一起看一看。"
-        if "当前由 ResponseAgent 以 normal_chat mode" in system:
+        if "请自然、直接地回答用户" in system:
             return "我在。这个问题可以直接拆开来看，我们先从你最想解决的那一部分开始。"
         if "ContextAgent" in system and "只输出查询词" in system:
             if "当前输入：" in last:
@@ -324,6 +324,7 @@ def format_history(history: list[AiMessage]) -> str:
 HIGH_RISK_WORDS = ["自杀", "自残", "不想活", "结束生命", "伤害自己", "轻生", "suicide", "kill myself", "self harm"]
 CONSULT_WORDS = [
     "焦虑", "抑郁", "压力", "失眠", "难过", "崩溃", "痛苦", "无助", "心理", "咨询",
+    "心情不好", "情绪低落", "提不起劲", "没力气",
     "anxious", "depress", "stress",
     # 学业/生涯压力也纳入咨询信号，避免"改论文+实习+秋招"被误判为普通任务
     "秋招", "实习", "毕设", "找工作", "学业", "挂科", "保研", "考研",
