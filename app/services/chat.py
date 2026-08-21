@@ -44,12 +44,15 @@ class ChatService:
             # 直接发送 ResponseAgent 生成、SafetyAgent 审核过的同一份文本，不再调用模型；
             # 按块节流重放，前端呈现打字机效果（发送内容与审核文本逐字一致）。
             chunk_delay = max(0.0, float(getattr(self.settings, "chat_stream_chunk_delay_ms", 0.0))) / 1000.0
+            # 发送最终回复
             for chunk in split_text(outcome.final_response, 12):
                 yield sse("token", ChatStreamEvent(type="token", sessionId=outcome.session.public_id, content=chunk).model_dump())
                 if chunk_delay:
                     await asyncio.sleep(chunk_delay)
+            # 保存助手消息
             if outcome.final_response:
                 self.agent_harness.save_assistant_message(user, outcome.session, outcome.final_response)
+            # dispatch_tools() 根据 plan 执行工具
             tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
         except Exception as exc:
             logger.exception("Post-harness stage failed for session=%s", outcome.session.public_id)

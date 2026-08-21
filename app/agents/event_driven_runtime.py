@@ -131,6 +131,7 @@ class EventDrivenAgentRuntimeService:
             return [history[0], *history[-(limit - 1):]]
         return history[-limit:]
 
+# _to_result() 的作用是把黑板中的内容整理成一个 AgentRunResult
     def _to_result(
         self,
         board: CollaborationBlackboard,
@@ -138,19 +139,23 @@ class EventDrivenAgentRuntimeService:
         services: AgentRuntimeServices,
         started_at,
     ) -> AgentRunResult:
+        # 先确定最终意图和风险
         intent = self._select_intent(board)
         risk = self._select_risk(board)
-        context = board.latest_artifact("context")
+        # 读取最新的上下文和风险结果，因为一个 Agent 运行期间可能多次生成 context artifact，所以不能随便取第一条。
+        context = board.latest_artifact("context") # 从所有 context 类型的 artifact 中，从后往前找到最新的一条。
         risk_artifact = board.latest_artifact("risk")
         # 只采纳经 Coordinator 接受（即已通过对应版本安全审核）的候选；
         # 未采纳的候选文本绝不能作为最终回复发送（未审核内容不得放行）。
         accepted = board.accepted_artifact()
+        # 准备 memory brief 和检索结果
         memory_brief = board.memory_brief or "无相关历史记忆。"
         retrieved: list[SearchResult] = []
         response_messages: list[AiMessage] = []
         if context:
             memory_brief = context.payload.get("memoryBrief") or memory_brief
             retrieved = context.payload.get("retrievedKnowledge") or []
+        # 如果存在最终被接受的回复 artifact，就从中取出：
         if accepted:
             response_messages = accepted.payload.get("messages") or []
         if not response_messages:
@@ -158,9 +163,12 @@ class EventDrivenAgentRuntimeService:
         # 最终文本必须来自被采纳（已审核）的候选 artifact；未被采纳时
         # （如审核持续不通过、预算耗尽）降级为确定性安全兜底文本，绝不发送未审核内容。
         final_response = (accepted.payload.get("text") or "").strip() if accepted else ""
+        # 如果出现情况，系统不会把未审核的候选文本发出去，而是使用确定性的安全兜底文本。
         if not final_response:
             final_response = fallback_response_text(risk)
         final_review = None
+        # 找到最终回复对应的安全审核记录
+        # 找：针对当前 accepted 回复的那一条 safety_review artifact。
         if accepted:
             final_review = next(
                 (
@@ -170,8 +178,12 @@ class EventDrivenAgentRuntimeService:
                 ),
                 None,
             )
+        # 提取心理评估结果
         assessment = risk_artifact.payload.get("assessment") if risk_artifact else None
+        # 整理协作事件和 LLM 调用记录
+        # 先复制本轮 Agent 协作事件
         collaboration_events = list(board.events)
+        # 补充 LLM 调用记录
         collaboration_events.extend(_llm_record_events(services.llm_call_records))
         return AgentRunResult(
             intent=intent,

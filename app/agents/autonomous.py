@@ -321,6 +321,8 @@ class SafetyAgent(BaseAutonomousAgent):
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
         events: tuple[AgentEvent, ...] = ()
+        # 如果评估出来的风险是high，则触发SAFETY_OVERRIDE，也就是说，即使其他 artifact 中有较低风险判断，只要出现 SAFETY_OVERRIDE：最终意图 = RISK，最终风险 = HIGH
+        # 这个事件非常重要，因为后续的风险选择逻辑会把它视为最高优先级：
         if assessment.risk == RiskLevel.HIGH:
             events = (
                 AgentEvent(
@@ -512,24 +514,40 @@ class ContextAgent(BaseAutonomousAgent):
     def act(self, task: AgentTask, board: CollaborationBlackboard) -> AgentTurnResult:
         from app.services.skills import MindBridgeSkillLibrary
 
+        # 读取会话历史和摘要，从共享黑板取出本轮开始时加载好的历史消息。
         history = list(board.conversation_history)
         deterministic_brief = board.memory_brief
+        # 让 ContextAgent 调用 LLM 【重新生成】更适合上下文检索的摘要：
         memory_brief = self._summarize_memory(history, board.model_input, deterministic_brief)
         model_history = list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
         intent = _intent(board)
         risk = _risk_level(board)
 
-        retrieved: list["SearchResult"] = []
-        query = ""
-        skill_context = ""
-        iterations = 0
+        # 初始化检索相关变量
+        retrieved: list["SearchResult"] = [] # 检索结果
+        query = "" # 检索查询词
+        skill_context = "" # skill 上下文
+        iterations = 0 # RAG 执行次数
         events: tuple[AgentEvent, ...] = ()
+        # 判断是否需要 RAG
         if intent != IntentType.CHAT or risk != RiskLevel.LOW:
+            # 记录检索开始时间
             retrieval_started = time.perf_counter()
             try:
                 query, retrieved, iterations = self._iterative_retrieve(memory_brief, board.model_input)
             except Exception as exc:
                 # RAG 失败不阻断链路：降级为空检索结果继续
+                # 如果知识库、向量检索或查询改写失败：
+                # 不让整个 Agent 流程失败；
+                # 查询词退化为当前输入前 60 个字符；
+                # 检索结果置空；
+                # 迭代次数置为 0。  board.user_input  = 原始用户输入；board.model_input = 脱敏后的用户输入
+
+                # 让query退化为当前输入前 60 个字符的原因：
+                # 保留用户真正的问题；
+                # 避免因为改写失败而把 query 设为空；
+                # 限制查询长度，避免过长文本进入检索或日志；
+                # 方便 trace 记录本次原始检索意图。
                 query, retrieved, iterations = board.model_input[:60], [], 0
                 events = (
                     AgentEvent(
@@ -558,6 +576,9 @@ class ContextAgent(BaseAutonomousAgent):
                         round=board.current_round,
                     ),
                 )
+            # 加载回复技能上下文
+            # 根据当前用户的意图、风险等级和原始输入，选择对应的几个 Skill 文件，
+            # 并把这些文件的内容拼成一段字符串，保存到 skill_context 变量中。
             skill_context = MindBridgeSkillLibrary.response_skill_context(intent, risk, board.user_input)
         payload = {
             "memoryBrief": memory_brief,
@@ -568,6 +589,7 @@ class ContextAgent(BaseAutonomousAgent):
             "agenticRagIterations": iterations,
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
+        # 写入context-agent的私有记忆，记录了本次context-agent的工作摘要
         self.remember(f"context intent={intent.value}; risk={risk.value}; retrieved={len(retrieved)}; ragIterations={iterations}")
         return AgentTurnResult(
             artifacts=(self._artifact("context", payload, task, 0.88),),
@@ -595,9 +617,14 @@ class ContextAgent(BaseAutonomousAgent):
             return model_input[:60]
 
     def _summarize_memory(self, history: list[AiMessage], current_input: str, fallback: str) -> str:
+        # 从配置读取摘要最大长度，至少保留 120 个字符。
         max_chars = max(120, self.services.settings.memory_summary_max_chars)
+        # 没有历史消息
         if not history:
             return "无相关历史记忆。"
+        # 提示模型只输出 1～3 条中文记忆要点，不输出风险等级或诊断。
+        # 将当前输入和最近 12 条历史消息发送给模型
+        # 摘要超过限制时截断
         try:
             summary = self.client().complete([
                 AiMessage(role="system", content=f"{self.profile.system_prompt}\n只输出 1-3 条中文记忆要点，不输出风险等级或诊断。"),
@@ -611,28 +638,48 @@ class ContextAgent(BaseAutonomousAgent):
         """Agentic RAG: rewrite query, retrieve, evaluate sufficiency, and iterate if needed."""
         settings = self.services.settings
         top_k = settings.knowledge_top_k
-        max_iterations = max(1, settings.agentic_rag_max_iterations)
+        max_iterations = max(1, settings.agentic_rag_max_iterations) # 表示最多检索多少轮
 
+        # 如果关闭了智能迭代 RAG，流程很简单：
+        # 当前输入 + 记忆摘要
+        #         ↓
+        # LLM 改写查询词
+        #         ↓
+        # 知识库检索一次
+        #         ↓
+        # 返回结果
         if not settings.agentic_rag_enabled:
+            # 调用 LLM，把用户输入改成更适合知识库检索的查询词
             query = self._rewrite_query(memory_brief, model_input)
+            # 使用改写后的 query 查询知识库，最多返回 top_k 条结果。
             return query, self.services.knowledge.retrieve(query, top_k), 1
 
+        # 开启agentic rag
         current_query = self._rewrite_query(memory_brief, model_input)
-        all_results: list["SearchResult"] = []
-        seen_keys: set[tuple[str, str]] = set()
+        all_results: list["SearchResult"] = [] # 保存所有轮次累计得到的结果。为什么不是每一轮覆盖？因为第二轮可能找到第一轮没有找到的新资料，需要把多轮结果合并起来。
+        seen_keys: set[tuple[str, str]] = set() # 记录已经出现过
         query = current_query
 
+        # 开始循环检索
         for iteration in range(1, max_iterations + 1):
-            batch = self.services.knowledge.retrieve(current_query, top_k)
+            batch = self.services.knowledge.retrieve(current_query, top_k) # 执行一次普通的知识检索，Agentic RAG 没有把你之前的 Hybrid RAG 替换掉。
             for item in batch:
-                key = (item.source, item.content)
+                key = (item.source, item.content)  # 只要来源和正文都相同，就认为是重复结果。
                 if key not in seen_keys:
                     seen_keys.add(key)
                     all_results.append(item)
 
+            # 判断检索结果是否足够
+            # 使用启发式词语覆盖率判断：
+            # 1.从用户输入提取关键词；
+            # 2.从检索结果中提取关键词；
+            # 3.计算用户关键词被结果覆盖的比例；
+            # 4.如果覆盖率达到阈值，就认为足够。
             if self._is_sufficient(model_input, all_results):
                 return current_query, self._rank_dedup_results(all_results, top_k), iteration
 
+            # 结果不足时重新改写查询
+            # 这次不是普通改写，而是针对“当前资料缺少什么”来改写查询。
             if iteration < max_iterations:
                 current_query = self._rewrite_for_gap(memory_brief, model_input, all_results)
                 if not current_query or current_query == query:
@@ -645,17 +692,23 @@ class ContextAgent(BaseAutonomousAgent):
         """Heuristic sufficiency check before paying for an LLM judgment."""
         if not results:
             return False
-        threshold = max(0.0, min(1.0, self.services.settings.agentic_rag_sufficiency_threshold))
+        threshold = max(0.0, min(1.0, self.services.settings.agentic_rag_sufficiency_threshold)) # 0.7
+        # 提取用户问题的关键词，_extract_terms() 最终调用项目的 tokenize()，转换成set，方便计算交集
         query_terms = set(self._extract_terms(model_input))
+        # 用户问题没有关键词时，只要有检索结果，就认为足够
         if not query_terms:
             return len(results) > 0
 
         best_coverage = 0.0
         for item in results:
+            # 将先前检索得到的知识片段正文也进行分词
             item_terms = set(self._extract_terms(item.content))
+            # 计算关键词覆盖率
             if item_terms:
+                # 计算用户输入关键词在每个检索结果中的覆盖率【计算集合的交集】
                 coverage = len(query_terms & item_terms) / len(query_terms)
                 best_coverage = max(best_coverage, coverage)
+            # 如果某一条结果的覆盖率达到阈值，就认为资料足够。
             if best_coverage >= threshold:
                 return True
         return best_coverage >= threshold

@@ -10,14 +10,20 @@ from app.services.knowledge import KnowledgeService
 
 
 def evaluate() -> dict:
+    # 初始化数据库和知识库服务
     settings = get_settings()
     create_schema()
     db = SessionLocal()
     try:
+        # 读取配置、创建数据库表，并打开数据库连接。
         seed_data(db)
+        # 初始化测试数据和真正的 KnowledgeService。
+        # 这里的 service.retrieve() 就是线上实际使用的检索流程.
         service = KnowledgeService(db, settings)
+        # 加载评测数据集 app/rag_eval/mindbridge-rag-eval.json
         dataset_path = Path(settings.rag_eval_dataset)
         cases = json.loads(dataset_path.read_text(encoding="utf-8"))
+        # 对每个 case 执行检索
         results = [evaluate_case(service, case, settings.knowledge_top_k) for case in cases]
         total = max(1, len(results))
         hits = [item for item in results if item["hit"]]
@@ -43,13 +49,16 @@ def evaluate() -> dict:
 
 
 def evaluate_case(service: KnowledgeService, case: dict, top_k: int) -> dict:
+    # 直接调用真实 RAG 检索
     retrieved = service.retrieve(case["question"], top_k)
+    # 读取期望答案条件
     expected_sources = {source.lower() for source in case.get("expectedSources", [])}
     expected_terms = [term.lower() for term in case.get("expectedTerms", [])]
     items = []
     first_rank = 0
     relevant_count = 0
     for index, item in enumerate(retrieved, start=1):
+        # 判断单条结果是否相关
         relevant = is_relevant(item.source, item.content, expected_sources, expected_terms)
         if relevant:
             relevant_count += 1
@@ -79,6 +88,7 @@ def evaluate_case(service: KnowledgeService, case: dict, top_k: int) -> dict:
     }
 
 
+# 匹配规则：来源文件完全匹配，或者正文中包含任意一个 expectedTerm
 def is_relevant(source: str, content: str, expected_sources: set[str], expected_terms: list[str]) -> bool:
     if source.lower() in expected_sources:
         return True

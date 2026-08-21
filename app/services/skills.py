@@ -128,8 +128,17 @@ class MindBridgeSkillLibrary:
 
     @staticmethod
     def response_skill_context(intent: IntentType, risk: RiskLevel, text: str) -> str:
+        # 这里不会读取文件，只根据规则决定需要哪些 Skill。
         names = MindBridgeSkillLibrary.response_skill_names(intent, risk, text)
+        # 创建 Skill 注册表，去找 Skill 文件，默认目录是：项目根目录/skills/
         registry = MindBridgeSkillLibrary.registry()
+        # 读取并拼接 Skill 内容，等价于👇🏻
+        # contexts = []
+        # for name in names:
+        #     skill = registry.get_required(name)  根据名称读取对应的 SKILL.md
+        #     context = skill.prompt_context()  把 Skill 转换成 Prompt 文本
+        #     contexts.append(context)
+        # return "\n\n".join(contexts)
         return "\n\n".join(registry.get_required(name).prompt_context() for name in names)
 
     @staticmethod

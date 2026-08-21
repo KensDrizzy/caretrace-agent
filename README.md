@@ -195,6 +195,26 @@ curl -u admin:admin123 -X POST http://127.0.0.1:8080/api/admin/knowledge/backup
 
 当 `KNOWLEDGE_VECTOR_REQUIRED=false` 时，如果 Chroma 或 embedding 服务不可用，系统会降级到本地 BM25 + 词面 rerank；设为 `true` 则启动或检索失败时直接暴露错误。
 
+### 切换百炼 Embedding
+
+Embedding 使用独立配置，兼容 OpenAI 风格的 Embeddings API。以百炼北京地域的 `text-embedding-v4` 为例：
+
+```env
+EMBEDDING_BASE_URL=https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+EMBEDDING_API_KEY=你的百炼API_KEY
+EMBEDDING_MODEL=text-embedding-v4
+CHROMA_COLLECTION_NAME=mindbridge_knowledge_text_embedding_v4
+```
+
+切换 Embedding 模型后必须重建向量索引，不能复用旧模型生成的 `embedding_json`。配置新的模型后，使用管理员接口：
+
+```bash
+curl -u admin:admin123 -X POST \
+  http://127.0.0.1:8080/api/admin/knowledge/rebuild-vector
+```
+
+重建接口会清空当前 Chroma collection，并根据数据库中的知识分块重新生成向量。重建成功后再将 `KNOWLEDGE_VECTOR_REQUIRED` 改为 `true`，用于发现向量服务配置错误。
+
 ## 工具队列、限流与死信
 
 心理报告生成后，工具链不会阻塞学生端流式回复，而是写入 `tool_jobs` 队列表：

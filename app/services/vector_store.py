@@ -32,26 +32,30 @@ class VectorSearchHit:
 
 
 class ChromaKnowledgeStore:
-    """Primary RAG path: OpenAI text-embedding-3-small embeddings stored and queried in Chroma."""
+    """Primary RAG path: configurable OpenAI-compatible embeddings in Chroma."""
 
     def __init__(self, settings: Settings):
         self.settings = settings
         self.can_embed = False
+        self.needs_rebuild = False
         self.error = ""
+        self.embedding_model = settings.resolved_embedding_model
+        self.embedding_base_url = settings.resolved_embedding_base_url
+        self.embedding_api_key = settings.resolved_embedding_api_key
         if not settings.knowledge_vector_enabled:
             self.error = "Chroma 向量库未启用"
             return
-        if not settings.openai_api_key:
+        if not self.embedding_api_key:
             if settings.knowledge_vector_required:
-                raise VectorStoreUnavailable("缺少 OPENAI_API_KEY，无法启用 Chroma + text-embedding-3-small 主检索方案")
-            self.error = f"缺少 OPENAI_API_KEY，Chroma + text-embedding-3-small 不可用，已回退到{FALLBACK_RETRIEVAL_LABEL}"
+                raise VectorStoreUnavailable("缺少 Embedding API Key，无法启用 Chroma 向量检索")
+            self.error = f"缺少 Embedding API Key，Chroma 向量检索不可用，已回退到{FALLBACK_RETRIEVAL_LABEL}"
             return
         try:
             import chromadb
         except ImportError as exc:
             if settings.knowledge_vector_required:
-                raise VectorStoreUnavailable("缺少 chromadb 依赖，无法启用 Chroma + text-embedding-3-small 主检索方案") from exc
-            self.error = f"缺少 chromadb 依赖，Chroma + text-embedding-3-small 不可用，已回退到{FALLBACK_RETRIEVAL_LABEL}"
+                raise VectorStoreUnavailable("缺少 chromadb 依赖，无法启用 Chroma 向量检索") from exc
+            self.error = f"缺少 chromadb 依赖，Chroma 向量检索不可用，已回退到{FALLBACK_RETRIEVAL_LABEL}"
             return
 
         persist_dir = self._resolve_path(settings.chroma_persist_dir)
@@ -61,15 +65,39 @@ class ChromaKnowledgeStore:
         self.collection = self.client.get_or_create_collection(
             name=settings.chroma_collection_name,
             embedding_function=None,
-            metadata={"hnsw:space": "cosine", "embedding_model": settings.openai_embedding_model},
+            metadata={"hnsw:space": "cosine", "embedding_model": self.embedding_model},
         )
         self.can_embed = settings.knowledge_vector_enabled
+        stored_model = str((self.collection.metadata or {}).get("embedding_model", "")).strip()
+        if stored_model and stored_model != self.embedding_model:
+            self.needs_rebuild = True
+            self.error = (
+                f"Chroma 索引使用 {stored_model}，当前配置为 {self.embedding_model}，"
+                "请重建向量索引后再启用向量检索"
+            )
+
+    @property
+    def ready(self) -> bool:
+        return self.can_embed and not self.needs_rebuild
+
+    def reset_collection(self) -> None:
+        """删除当前 collection；数据库中的 KnowledgeChunk 仍保留，可重新索引。"""
+        if not self.can_embed:
+            raise VectorStoreUnavailable(self.error or "Chroma 向量库不可用")
+        self.client.delete_collection(name=self.settings.chroma_collection_name)
+        self.collection = self.client.get_or_create_collection(
+            name=self.settings.chroma_collection_name,
+            embedding_function=None,
+            metadata={"hnsw:space": "cosine", "embedding_model": self.embedding_model},
+        )
+        self.needs_rebuild = False
+        self.error = ""
 
     def upsert_chunks(self, chunks: list[KnowledgeChunk], embeddings: list[list[float]]) -> int:
         rows = [chunk for chunk in chunks if chunk.id is not None and chunk.content.strip()]
         if not rows:
             return 0
-        ids = [self._id(chunk.id) for chunk in rows]
+        ids = [self._id(chunk.id) for chunk in rows] # knowledge-chunk-{chunk_id}
         documents = [chunk.content for chunk in rows]
         metadatas = [
             {"db_id": int(chunk.id), "source": chunk.source, "source_index": int(chunk.source_index)}
@@ -121,9 +149,10 @@ class ChromaKnowledgeStore:
             )
         return hits
 
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not self.can_embed:
-            raise VectorStoreUnavailable(self.error or "Chroma + text-embedding-3-small 主检索方案不可用")
+            raise VectorStoreUnavailable(self.error or "Chroma 向量检索不可用")
         return self._embed(texts)
 
     def snapshot(self) -> str | None:
@@ -144,20 +173,42 @@ class ChromaKnowledgeStore:
         return int(self.collection.count())
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
+        # 构造请求体
         payload = {
-            "model": self.settings.openai_embedding_model,
+            "model": self.embedding_model,
             "input": [text if text.strip() else " " for text in texts],
         }
-        headers = {"Authorization": f"Bearer {self.settings.openai_api_key}"}
+        headers = {"Authorization": f"Bearer {self.embedding_api_key}"}
+        # 发起 HTTP POST请求
         response = get_sync_client(self.settings).post(
-            f"{self.settings.openai_base_url}/embeddings",
+            f"{self.embedding_base_url}/embeddings",
             headers=headers,
             json=payload,
             timeout=self.settings.embedding_timeout_seconds,
         )
+        # 检查 HTTP 状态码
         response.raise_for_status()
+        # 读取 API 返回结果
+        # {
+        #   "object": "list",
+        #   "data": [
+        #     {
+        #       "object": "embedding",
+        #       "index": 0,
+        #       "embedding": [0.012, -0.083, 0.441]
+        #     },
+        #     {
+        #       "object": "embedding",
+        #       "index": 1,
+        #       "embedding": [0.102, 0.031, -0.228]
+        #     }
+        #   ],
+        #   "model": "text-embedding-3-small"
+        # }
+        # 按照index排序
         rows = sorted(response.json().get("data", []), key=lambda item: item.get("index", 0))
         embeddings = [row.get("embedding") for row in rows]
+        # 检查返回数量和内容是否对得上
         if len(embeddings) != len(texts) or any(not embedding for embedding in embeddings):
             raise VectorStoreUnavailable("OpenAI embeddings 接口返回向量数量不匹配")
         return [[float(value) for value in embedding] for embedding in embeddings]

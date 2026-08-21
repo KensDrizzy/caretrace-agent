@@ -25,6 +25,7 @@ class PsychologicalAssessmentService:
         if has_high_risk_signal(text):
             return PsychologyAssessment(EmotionLabel.HIGH_RISK, 4.0, RiskLevel.HIGH, 0.95, "检测到明确高风险表达")
         try:
+            # 如果没有命中明确高风险词，就调用 LLM：
             raw = self.ai.complete(PromptTemplates.psychology_prompt(history or [], text))
             start = raw.find("{")
             end = raw.rfind("}")
@@ -36,10 +37,12 @@ class PsychologicalAssessmentService:
             score_risk = risk_from_score(score)
             if risk_order(score_risk) > risk_order(risk):
                 risk = score_risk
+            # 如果情绪标签是 HIGH_RISK，强制将风险设为 HIGH。
             if emotion == EmotionLabel.HIGH_RISK:
                 risk = RiskLevel.HIGH
             return PsychologyAssessment(emotion, score, risk, confidence, data.get("summary", "模型评估结果"))
         except Exception:
+            # 如果 LLM 调用或解析失败，就执行确定性 heuristic
             return heuristic(text)
 
 

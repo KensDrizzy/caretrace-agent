@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.6-luna"
     openai_reasoning_effort: str = "none"
     openai_embedding_model: str = "text-embedding-3-small"
+    # Embedding 可独立于对话模型配置；为空时兼容旧的 OPENAI_* 配置。
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-v4-flash"
@@ -99,6 +103,18 @@ class Settings(BaseSettings):
     @property
     def project_root(self) -> Path:
         return Path(__file__).resolve().parents[2]
+
+    @property
+    def resolved_embedding_base_url(self) -> str:
+        return (self.embedding_base_url.strip() or self.openai_base_url.strip()).rstrip("/")
+
+    @property
+    def resolved_embedding_api_key(self) -> str:
+        return self.embedding_api_key.strip() or self.openai_api_key.strip()
+
+    @property
+    def resolved_embedding_model(self) -> str:
+        return self.embedding_model.strip() or self.openai_embedding_model.strip()
 
 
 @lru_cache

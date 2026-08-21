@@ -74,6 +74,7 @@ class MindBridgeAgentHarness:
         model_input = self.privacy.sanitize(original_input)
         session = self._resolve_session(user, request.sessionId, original_input)
         try:
+            # Agent Runtime 返回AgentRunResult后，Harness 创建报告
             agent_run = create_agent_runtime(self.db, self.settings).run(user, session, original_input, model_input)
         except Exception as exc:
             # 运行时崩溃也要落一条 FAILED trace，方便事后排查，然后继续抛出
@@ -101,10 +102,13 @@ class MindBridgeAgentHarness:
                 report_id=None,
             )
             raise
+
         self.save_message(user, session, MessageRole.USER, original_input)
 
         report = self._create_report(user, session, original_input, agent_run)
         risk_level = report.risk_level if report is not None else None
+        # 创建AgentToolPlan，它不是 LLM 生成的，也不是某个 Agent 在 act() 中生成的，而是 Harness 根据报告结果确定性创建的。
+        # 只有report_id和risk_level
         tool_plan = AgentToolPlan(report_id=report.id if report is not None else None, risk_level=risk_level)
         return AgentHarnessOutcome(
             user=user,

@@ -13,6 +13,8 @@ except Exception as exc:  # pragma: no cover
 mcp = FastMCP("mindbridge-python-tools")
 
 
+# 把普通 Python 函数注册为 MCP Tool。
+# 它会根据 report_id 查找心理报告，然后调用：ToolOrchestrationService.write_excel()这是真正写文件，不是生成一段提示词。
 @mcp.tool()
 def mindbridge_excel_report(report_id: int) -> str:
     """Write one psychological risk report into the CareTrace Excel ledger."""
@@ -28,6 +30,7 @@ def mindbridge_excel_report(report_id: int) -> str:
         db.close()
 
 
+# 创建风险个案 它会真实创建 RiskCase 数据库记录。
 @mcp.tool()
 def mindbridge_case_create(report_id: int) -> str:
     """Create or return the active CareTrace risk case for one psychological report."""
@@ -42,7 +45,7 @@ def mindbridge_case_create(report_id: int) -> str:
     finally:
         db.close()
 
-
+# 发送风险预警 它会执行预警记录或发送邮件。
 @mcp.tool()
 def mindbridge_alert_send(case_id: int) -> str:
     """Send or record the counselor alert for one CareTrace risk case."""
@@ -60,6 +63,7 @@ def mindbridge_alert_send(case_id: int) -> str:
         db.close()
 
 
+# 确认接手个案 它会更新数据库里的个案状态和接手人。
 @mcp.tool()
 def mindbridge_alert_ack(case_id: int, actor: str, note: str = "") -> str:
     """Mark a CareTrace risk case as acknowledged by a counselor or administrator."""
@@ -73,7 +77,7 @@ def mindbridge_alert_ack(case_id: int, actor: str, note: str = "") -> str:
     finally:
         db.close()
 
-
+# 增加个案备注 它会插入一条 CaseNote 数据库记录。
 @mcp.tool()
 def mindbridge_case_note_add(case_id: int, actor: str, note: str) -> str:
     """Append a follow-up note to a CareTrace risk case."""
@@ -87,7 +91,7 @@ def mindbridge_case_note_add(case_id: int, actor: str, note: str) -> str:
     finally:
         db.close()
 
-
+# 直接发送报告预警 它根据报告直接执行通知。
 @mcp.tool()
 def mindbridge_alert_notify(report_id: int) -> str:
     """Send a high-risk alert email and record the notification result for one psychological report."""
