@@ -46,13 +46,14 @@ class ChatService:
             chunk_delay = max(0.0, float(getattr(self.settings, "chat_stream_chunk_delay_ms", 0.0))) / 1000.0
             # 发送最终回复
             for chunk in split_text(outcome.final_response, 12):
+                # 这一步把审核通过的回复通过 SSE 发给学生。
                 yield sse("token", ChatStreamEvent(type="token", sessionId=outcome.session.public_id, content=chunk).model_dump())
                 if chunk_delay:
                     await asyncio.sleep(chunk_delay)
             # 保存助手消息
             if outcome.final_response:
                 self.agent_harness.save_assistant_message(user, outcome.session, outcome.final_response)
-            # dispatch_tools() 根据 plan 执行工具
+            # dispatch_tools() 根据 plan 执行工具     工具执行失败通常不会改变已经发送给学生的文本
             tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
         except Exception as exc:
             logger.exception("Post-harness stage failed for session=%s", outcome.session.public_id)

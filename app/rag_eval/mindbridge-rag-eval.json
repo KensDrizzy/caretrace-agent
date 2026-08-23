@@ -358,5 +358,845 @@
     "question": "轻中度抑郁倾向时，知识库建议的支持方式有哪些？",
     "expectedSources": ["campus-mental-health.md"],
     "expectedTerms": ["轻中度抑郁倾向", "small actions", "social connection", "professional support"]
+  },
+  {
+    "id": "academic-pressure-three-buckets",
+    "question": "事情多到同时压过来时，怎样把学业任务拆成几个优先级？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["必须今天处理", "本周处理", "接受不完美"]
+  },
+  {
+    "id": "academic-minimum-action",
+    "question": "学生面对论文完全启动不了，可以先做什么最小行动？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["最小行动", "打开文档写标题", "做一道题"]
+  },
+  {
+    "id": "academic-procrastination-causes",
+    "question": "拖延一定是懒惰吗，知识库还列出了哪些常见原因？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["procrastination", "焦虑", "完美主义", "害怕失败"]
+  },
+  {
+    "id": "academic-ten-minute-start",
+    "question": "对迟迟无法开始学习的学生，10 分钟启动法怎么使用？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["10 分钟启动法", "不要求完成", "决定是否继续"]
+  },
+  {
+    "id": "academic-ugly-first-draft",
+    "question": "完美主义导致作业写不下去时，可以设置什么初稿目标？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["完美主义", "丑版初稿", "能修改"]
+  },
+  {
+    "id": "academic-burnout-signs",
+    "question": "学业倦怠通常会有哪些表现？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["burnout", "长期疲惫", "效率下降", "麻木"]
+  },
+  {
+    "id": "academic-burnout-load-check",
+    "question": "学生长期超负荷时，应从哪些方面检查自己的负荷？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["课程数量", "家庭责任", "睡眠", "社交支持"]
+  },
+  {
+    "id": "academic-rest-is-recovery",
+    "question": "为什么学业倦怠时休息不应该只被看成奖励？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["长期超负荷", "休息不是奖励", "恢复功能"]
+  },
+  {
+    "id": "academic-graduate-advisor-outline",
+    "question": "研究生课题卡住，和导师沟通前可以准备哪些要点？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["当前进展", "卡点", "已经尝试", "具体帮助"]
+  },
+  {
+    "id": "academic-avoid-angry-message",
+    "question": "和导师沟通压力时，为什么不建议在极端情绪下发长篇指责？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["事实和需求", "极端情绪", "长篇指责"]
+  },
+  {
+    "id": "academic-functional-decline-help",
+    "question": "学业压力出现哪些功能受损表现时应尽快寻求人帮助？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["连续失眠", "逃课", "躯体不适", "基本生活"]
+  },
+  {
+    "id": "academic-medium-risk-support",
+    "question": "学业崩溃但没有明确自伤计划时，可以联系哪些校园支持？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["MEDIUM", "辅导员", "任课老师", "心理中心"]
+  },
+  {
+    "id": "academic-high-risk-language",
+    "question": "学生说挂科不如死了时，为什么不能只按普通学业压力处理？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["self-harm", "suicide", "HIGH", "立即危险"]
+  },
+  {
+    "id": "academic-no-result-promise",
+    "question": "CareTrace 可以帮学生做学业计划，但不能替学生承诺什么？",
+    "expectedSources": ["academic-stress-and-burnout.md"],
+    "expectedTerms": ["写求助消息", "沟通的要点", "不能替学生承诺学业结果"]
+  },
+  {
+    "id": "adjustment-transition-types",
+    "question": "大学期间常见的阶段转换包括哪些场景？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["transition", "新生入学", "转专业", "毕业"]
+  },
+  {
+    "id": "adjustment-not-failure",
+    "question": "刚进入大学适应困难，是否说明学生失败或不适合这里？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["适应困难不是失败", "旧支持系统", "新环境"]
+  },
+  {
+    "id": "adjustment-freshman-common-problems",
+    "question": "新生入学后常见的适应困扰有哪些？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["想家", "课程跟不上", "室友磨合", "专业失望"]
+  },
+  {
+    "id": "adjustment-basic-anchors",
+    "question": "新生感到陌生和失控时，可以建立哪些日常锚点？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["固定吃饭地点", "联系一个熟人", "任课老师", "心理中心位置"]
+  },
+  {
+    "id": "adjustment-low-pressure-social",
+    "question": "社交焦虑的新生不必马上变外向，可以尝试哪些低压力社交？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["低压力社交", "允许提前离开", "具体任务", "小需求"]
+  },
+  {
+    "id": "adjustment-social-goal-familiarity",
+    "question": "适应期社交的目标是立刻交到亲密朋友吗？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["增加熟悉感", "亲密朋友圈", "社交焦虑"]
+  },
+  {
+    "id": "adjustment-major-change-information",
+    "question": "考虑转专业时，应先收集哪些现实信息？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["转专业条件", "课程差异", "就业路径", "学院政策"]
+  },
+  {
+    "id": "adjustment-no-major-decision",
+    "question": "心理助手能不能直接替学生决定是否转专业？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["信息收集", "降低灾难化", "不要替学生做重大决定"]
+  },
+  {
+    "id": "adjustment-graduation-identity-anxiety",
+    "question": "毕业求职时，如何看待 offer、论文结果和个人价值的关系？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["身份焦虑", "自我价值", "不能定义整个人"]
+  },
+  {
+    "id": "adjustment-job-short-actions",
+    "question": "面对毕业就业焦虑，可以制定哪些短期行动？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["修改简历", "联系导师", "就业中心", "面试练习"]
+  },
+  {
+    "id": "adjustment-persistent-support",
+    "question": "适应困难持续数月并伴随逃课封闭时，应建议什么？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["持续数月", "逃课", "预约校园心理中心"]
+  },
+  {
+    "id": "adjustment-high-risk-escalation",
+    "question": "适应期学生出现明确自伤或自杀表达时应怎样升级？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["self-harm", "suicide", "immediate danger", "HIGH"]
+  },
+  {
+    "id": "adjustment-core-needs",
+    "question": "适应期支持最重要的是帮助学生重新建立哪些感受？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["可预测感", "连接感", "掌控感"]
+  },
+  {
+    "id": "adjustment-small-executable",
+    "question": "为什么不能只对适应不良的新生说你会适应的？",
+    "expectedSources": ["adjustment-and-transition.md"],
+    "expectedTerms": ["具体", "小步", "可执行", "你会适应的"]
+  },
+  {
+    "id": "anxiety-body-signs",
+    "question": "焦虑在身体和注意力上可能表现出哪些信号？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["心慌", "胸闷", "手抖", "注意力下降"]
+  },
+  {
+    "id": "anxiety-first-lower-arousal",
+    "question": "学生恐慌时，为什么应先降低生理唤醒而不是马上分析大道理？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["降低生理唤醒", "高度警觉状态", "短步骤"]
+  },
+  {
+    "id": "anxiety-five-senses-sequence",
+    "question": "五感着陆练习的 5、4、3、2、1 分别代表什么？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["5 个看见", "4 个摸得到", "3 个听见", "1 个尝到"]
+  },
+  {
+    "id": "anxiety-grounding-purpose",
+    "question": "grounding 五感着陆为什么能帮助灾难化焦虑？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["灾难化想法", "当前环境", "注意力"]
+  },
+  {
+    "id": "anxiety-four-six-breathing",
+    "question": "4-6 呼吸练习应怎样做，重点是什么？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["4 拍吸气", "6 拍呼气", "延长呼气", "5 轮"]
+  },
+  {
+    "id": "anxiety-simple-panic-step",
+    "question": "学生正在明显恐慌、无法完成复杂练习时，可以给什么简单指令？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["双脚踩在地面", "慢慢呼气", "比吸气长"]
+  },
+  {
+    "id": "anxiety-fact-guess-next-step",
+    "question": "焦虑稍微稳定后，如何区分事实、猜测和下一步？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["事实", "猜测", "下一步", "可以验证"]
+  },
+  {
+    "id": "anxiety-action-within-thirty-minutes",
+    "question": "焦虑认知整理中的下一步，最好满足什么时间和行动条件？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["10 到 30 分钟", "列提纲", "做一道题"]
+  },
+  {
+    "id": "anxiety-catastrophe-questions",
+    "question": "面对我一定会挂科的灾难化想法，可以温和地问哪些问题？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["最坏情况", "最可能情况", "朋友遇到同样情况"]
+  },
+  {
+    "id": "anxiety-dont-suppress",
+    "question": "为什么不建议用别想那么多来回应焦虑学生？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["别想那么多", "压制焦虑", "更挫败"]
+  },
+  {
+    "id": "anxiety-referral-signs",
+    "question": "焦虑出现哪些持续或功能损害表现时应建议专业求助？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["持续多周", "panic attack", "无法考试", "无法进食"]
+  },
+  {
+    "id": "anxiety-self-harm-high",
+    "question": "学生开始用伤害自己缓解焦虑时，是否还能只给呼吸练习？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["self-harm", "HIGH", "立即危险"]
+  },
+  {
+    "id": "anxiety-no-diagnosis",
+    "question": "CareTrace 能否根据心慌和担忧诊断焦虑障碍？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["不能诊断焦虑障碍", "不能开药", "不能替代咨询师"]
+  },
+  {
+    "id": "anxiety-medication-boundary",
+    "question": "正在服药的焦虑学生询问调药时，助手应该怎么做？",
+    "expectedSources": ["anxiety-panic-grounding.md"],
+    "expectedTerms": ["开药医生", "校医院", "不提供药物调整建议"]
+  },
+  {
+    "id": "referral-default-resources",
+    "question": "校园心理支持默认可以连接到哪些现实资源？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["辅导员", "校园心理中心", "校医院", "可信任同学"]
+  },
+  {
+    "id": "referral-localize-contact-info",
+    "question": "知识库里的校园电话和地址应该如何配置？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["学校部署", "本校信息", "电话和地址"]
+  },
+  {
+    "id": "referral-when-book-counseling",
+    "question": "困扰持续多久或出现什么影响时，应建议预约心理咨询？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["持续超过两周", "学习生活", "睡眠饮食", "预约校园心理中心"]
+  },
+  {
+    "id": "referral-not-last-resort",
+    "question": "是否必须等到完全撑不住才适合预约咨询？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["不需要等到", "常规方式", "合理的下一步"]
+  },
+  {
+    "id": "referral-medium-time-window",
+    "question": "中风险学生通常应在多长时间内联系现实支持者？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["MEDIUM", "24 到 72 小时", "现实支持者"]
+  },
+  {
+    "id": "referral-help-message",
+    "question": "连续失眠和情绪低落影响上课时，可以怎样给老师写简短求助信息？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["连续失眠", "影响上课", "预约心理咨询"]
+  },
+  {
+    "id": "referral-hard-to-send-message",
+    "question": "学生不敢直接向老师求助时，可以先把消息发给谁？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["可信任同学", "辅导员", "简短求助信息"]
+  },
+  {
+    "id": "referral-preparation-list",
+    "question": "第一次咨询前可以记录哪些信息帮助自己说清楚？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["什么时候开始", "睡眠和食欲变化", "学习生活受影响程度", "已经尝试"]
+  },
+  {
+    "id": "referral-three-part-summary",
+    "question": "担心咨询时说不清楚，可以把情况整理成哪三段？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["我最近的状态", "最影响我的事情", "我希望得到的帮助"]
+  },
+  {
+    "id": "referral-crisis-immediate",
+    "question": "已经准备自伤工具并正在失控时，应联系哪些即时支持？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["紧急服务", "校园保卫", "辅导员", "alert"]
+  },
+  {
+    "id": "referral-not-next-week-only",
+    "question": "为什么危机情况下不能只建议预约下周咨询？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["危机需要即时支持", "不要只建议", "预约下周咨询"]
+  },
+  {
+    "id": "referral-capability-boundary",
+    "question": "CareTrace 在咨询转介中能做什么、不能保证什么？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["解释求助路径", "写求助消息", "不能保证资源一定可用"]
+  },
+  {
+    "id": "referral-deployment-details",
+    "question": "学校部署知识库时应补充哪些本地危机资源信息？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["心理中心电话", "夜间值班电话", "保卫处电话", "危机热线"]
+  },
+  {
+    "id": "referral-professional-not-replaced",
+    "question": "AI 能不能代替专业人员完成危机处置？",
+    "expectedSources": ["counselor-referral-and-resources.md"],
+    "expectedTerms": ["不能代替专业人员", "危机处置", "专业人员"]
+  },
+  {
+    "id": "exam-week-priority-layers",
+    "question": "考前一周如何把复习内容分成三层优先级？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["高频重点", "基础保分", "低优先级"]
+  },
+  {
+    "id": "exam-avoid-all-nighter",
+    "question": "考前复习为什么不建议用完全熬夜换取安全感？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["固定休息", "吃饭", "完全熬夜", "短期安全感"]
+  },
+  {
+    "id": "exam-low-state-study-block",
+    "question": "状态差时，番茄钟是否必须坚持完整 25 分钟？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["番茄钟", "25 分钟", "10 分钟也算开始"]
+  },
+  {
+    "id": "exam-specific-block-goal",
+    "question": "一个复习时间块的目标怎样设置更容易降低焦虑？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["一个目标", "8 个概念", "3 道选择题", "越具体"]
+  },
+  {
+    "id": "exam-day-before-variables",
+    "question": "考前一天可以提前准备哪些东西来降低变量？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["证件", "文具", "路线", "闹钟"]
+  },
+  {
+    "id": "exam-insomnia-reassurance",
+    "question": "考前一晚失眠是否意味着第二天一定无法发挥？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["考前失眠不等于", "短期压力", "完成任务"]
+  },
+  {
+    "id": "exam-panic-in-room",
+    "question": "考试时心慌手抖、脑子空白，可以按什么顺序处理？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["3 轮慢呼气", "双脚踩稳", "先写会做的题", "跳过"]
+  },
+  {
+    "id": "exam-goal-get-points",
+    "question": "考试期间的现实目标是完全不焦虑还是拿到能拿的分？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["拿到能拿的分", "证明自己不焦虑", "考试期间"]
+  },
+  {
+    "id": "exam-post-review-limit",
+    "question": "考后反复查答案导致自责，可以怎样限制复盘？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["15 分钟", "客观问题", "停止反复查答案"]
+  },
+  {
+    "id": "exam-controllable-parts",
+    "question": "等待成绩时，哪些担心属于仍可行动的部分？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["补考", "重修", "申诉", "与老师沟通"]
+  },
+  {
+    "id": "exam-failed-no-future",
+    "question": "学生说挂科就没有未来了，为什么需要进一步评估而非当作夸张？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["不能只当作夸张", "self-harm", "suicide", "immediate danger"]
+  },
+  {
+    "id": "exam-high-risk-plan",
+    "question": "因考试崩溃且已有具体自伤计划时应按什么风险级别处理？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["具体计划", "无法保证安全", "HIGH"]
+  },
+  {
+    "id": "exam-medium-without-plan",
+    "question": "考试后持续崩溃但没有自伤计划时，建议联系谁？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["没有计划", "MEDIUM", "辅导员", "心理中心"]
+  },
+  {
+    "id": "exam-comparison-anxiety",
+    "question": "看到同学复习进度后崩溃属于考试季可能放大的哪类问题？",
+    "expectedSources": ["exam-season-guidance.md"],
+    "expectedTerms": ["人际比较", "复习效率下降", "自我评价"]
+  },
+  {
+    "id": "mood-validate-exhaustion",
+    "question": "学生长期低落疲惫时，怎样回应比劝他看开一点更合适？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["已经消耗了很久", "看开一点", "接住感"]
+  },
+  {
+    "id": "mood-no-diagnosis-from-tendency",
+    "question": "轻中度抑郁倾向是否等同于抑郁症诊断？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["并不等于诊断", "depression", "行为激活"]
+  },
+  {
+    "id": "mood-behavioral-activation",
+    "question": "低落时的行为激活强调一次彻底改变还是从小行动开始？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["behavioral activation", "small actions", "小行动"]
+  },
+  {
+    "id": "mood-small-action-examples",
+    "question": "状态很差、什么都不想做时，可以尝试哪些微小行动？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["下床喝水", "打开窗", "走 5 分钟", "可信任的人"]
+  },
+  {
+    "id": "mood-basic-routine",
+    "question": "低落并昼夜颠倒时，作息调整应先抓住哪些基础点？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["固定一个起床时间", "一顿稳定饭", "减少夜间独处"]
+  },
+  {
+    "id": "mood-journal-three-columns",
+    "question": "低落时的三栏日记可以分别写什么？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["今天发生了什么", "我有什么感受", "最小一步"]
+  },
+  {
+    "id": "mood-journal-purpose",
+    "question": "journaling 的目的是否是写得漂亮？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["日记不是为了写得漂亮", "反复播放", "放到纸上"]
+  },
+  {
+    "id": "mood-low-barrier-connection",
+    "question": "不想麻烦别人时，可以选择哪些低门槛社交连接？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["低门槛连接", "一起吃饭", "宿舍公共区", "简单消息"]
+  },
+  {
+    "id": "mood-dont-force-disclosure",
+    "question": "鼓励低落学生建立连接时，是否应要求他公开全部痛苦？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["不要逼迫", "公开所有痛苦", "social connection"]
+  },
+  {
+    "id": "mood-loss-support-list",
+    "question": "经历分手或被孤立后，可以怎样列出现实支持名单？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["一个能陪伴的人", "处理学业事务", "紧急情况下联系"]
+  },
+  {
+    "id": "mood-two-week-escalation",
+    "question": "低落持续两周以上并影响生活时，应采取什么下一步？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["持续两周以上", "心理中心", "专业机构"]
+  },
+  {
+    "id": "mood-warning-language",
+    "question": "哪些绝望表达属于需要认真升级关注的信号？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["不想活了", "消失就好了", "没有未来"]
+  },
+  {
+    "id": "mood-plan-means-farewell",
+    "question": "自伤计划、工具和告别语言同时出现时应如何处理？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["工具", "告别语言", "无法保证安全", "HIGH"]
+  },
+  {
+    "id": "mood-assistant-boundary",
+    "question": "情绪低落支持中，助手可以做什么但不能替代什么？",
+    "expectedSources": ["low-mood-depression-support.md"],
+    "expectedTerms": ["短期安全计划", "可信任的人", "不能诊断", "长期咨询"]
+  },
+  {
+    "id": "privacy-minimum-collection",
+    "question": "校园心理 AI 收集学生信息时应遵循什么范围原则？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["只收集", "完成服务所需要", "无关敏感信息"]
+  },
+  {
+    "id": "privacy-not-for-punishment",
+    "question": "管理员能否把风险信息用于惩罚、标签化或公开传播？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["安全支持", "不是用于惩罚", "标签化", "公开传播"]
+  },
+  {
+    "id": "privacy-confidentiality-exception",
+    "question": "向学生说明保密原则时，哪些危险情况构成例外？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["self-harm", "suicide", "伤害他人", "immediate danger"]
+  },
+  {
+    "id": "privacy-no-absolute-promise",
+    "question": "为什么心理助手不能承诺无论发生什么都绝对保密？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["绝对保密", "危机干预", "保护学生"]
+  },
+  {
+    "id": "privacy-sensitive-disclosure",
+    "question": "学生分享创伤或家庭暴力等敏感经历时，助手应如何回应？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["相信和支持", "不要追问细节", "是否安全"]
+  },
+  {
+    "id": "privacy-only-willing-details",
+    "question": "敏感经历中，如何让学生保留对披露程度的选择？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["只说你愿意说的部分", "确认你现在是否安全", "谁来支持"]
+  },
+  {
+    "id": "privacy-assistant-role-boundaries",
+    "question": "除了不能诊断开药，CareTrace 还不能扮演哪些角色？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["恋人", "监护人", "法律顾问", "唯一支持来源"]
+  },
+  {
+    "id": "privacy-formal-channels",
+    "question": "医学、法律或性侵举报等高风险事务应转向哪里？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["专业人员", "professional support", "校园正式渠道"]
+  },
+  {
+    "id": "privacy-high-risk-secret",
+    "question": "学生说想自杀但要求不要告诉任何人时，应如何回应？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["不能忽视", "安全风险", "现实中的人马上知道"]
+  },
+  {
+    "id": "privacy-admin-least-necessary",
+    "question": "管理员查看风险台账时应遵循什么信息访问原则？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["最小必要原则", "有职责的人", "避免"]
+  },
+  {
+    "id": "privacy-alert-followup",
+    "question": "管理员处理高风险预警时，应尽快确认哪些现实信息？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["学生位置", "安全状态", "现实联系人", "后续跟进"]
+  },
+  {
+    "id": "privacy-policy-updates",
+    "question": "知识库中的伦理和隐私内容是否需要随学校政策更新？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["随学校政策更新", "隐私告知文本", "危机干预流程"]
+  },
+  {
+    "id": "privacy-local-hours-hotline",
+    "question": "为了给出本地化建议，学校应补充哪些正式服务信息？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["咨询中心工作时间", "热线", "学校政策"]
+  },
+  {
+    "id": "privacy-no-medication-change",
+    "question": "伦理边界是否允许助手指导学生停药或换药？",
+    "expectedSources": ["privacy-boundaries-and-ethics.md"],
+    "expectedTerms": ["不开药", "不指导停药换药", "专业咨询师"]
+  },
+  {
+    "id": "relationship-conflict-types",
+    "question": "校园关系压力通常包括哪些人际和家庭场景？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["室友冲突", "恋爱分手", "家庭期待", "身份认同"]
+  },
+  {
+    "id": "relationship-no-simple-sides",
+    "question": "回应关系冲突时，为什么不应简单站队或煽动冲突？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["避免简单站队", "事实", "感受", "边界"]
+  },
+  {
+    "id": "relationship-roommate-specific-event",
+    "question": "室友矛盾沟通前，为什么要先记录具体事件？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["记录具体事件", "作息", "噪音", "概括"]
+  },
+  {
+    "id": "relationship-low-attack-expression",
+    "question": "室友夜间噪音影响睡眠时，怎样表达比指责对方更有效？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["低攻击表达", "睡眠受影响", "晚上 12 点后戴耳机"]
+  },
+  {
+    "id": "relationship-bullying-escalation",
+    "question": "室友冲突升级为霸凌、威胁或隐私侵犯时应联系谁？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["bullying", "辅导员", "宿管", "保卫处"]
+  },
+  {
+    "id": "relationship-no-retaliation",
+    "question": "遭遇严重室友冲突时，是否应建议学生独自硬扛或报复？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["不要建议学生独自硬扛", "不要鼓励报复", "安全问题"]
+  },
+  {
+    "id": "relationship-breakup-validation",
+    "question": "面对分手后的失落，为什么不宜马上说下一个更好？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["承认失落", "下一个更好", "混乱"]
+  },
+  {
+    "id": "relationship-breakup-four-questions",
+    "question": "分手后可以从哪些问题整理关系和接下来 24 小时？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["发生了什么", "失去了什么", "最需要什么支持", "24 小时"]
+  },
+  {
+    "id": "relationship-delay-message",
+    "question": "冲动想反复联系前任时，可以采取哪些延迟措施？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["延迟 20 分钟", "先不发送", "找朋友陪伴"]
+  },
+  {
+    "id": "relationship-violence-safety",
+    "question": "关系中出现跟踪、暴力或性侵风险时应优先做什么？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["威胁", "跟踪", "暴力", "校园安全资源"]
+  },
+  {
+    "id": "relationship-family-ambivalence",
+    "question": "学生既爱家人又觉得被控制，应如何理解这种矛盾？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["既爱家人", "感到窒息", "很高的期待"]
+  },
+  {
+    "id": "relationship-small-boundaries",
+    "question": "家庭压力下可以先谈判哪些小边界？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["学习安排", "电话频率", "隐私范围", "小边界"]
+  },
+  {
+    "id": "relationship-family-risk",
+    "question": "家庭冲突伴随离家危险和自伤念头时应如何处理？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["离家危险", "self-harm", "升级风险评估"]
+  },
+  {
+    "id": "relationship-support-resources",
+    "question": "关系问题需要现实支持时，可以联系哪些校园人员？",
+    "expectedSources": ["relationships-and-family.md"],
+    "expectedTerms": ["辅导员", "心理中心", "学院老师", "紧急服务"]
+  },
+  {
+    "id": "sleep-fixed-wake-time",
+    "question": "调整睡眠时，为什么固定起床时间通常比强迫今晚早睡更重要？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["固定起床时间", "今晚必须早睡", "白天晒太阳"]
+  },
+  {
+    "id": "sleep-nap-duration",
+    "question": "为了避免影响夜间睡眠，午睡建议控制在多久？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["20 到 30 分钟", "避免傍晚长睡", "午睡"]
+  },
+  {
+    "id": "sleep-wind-down-routine",
+    "question": "睡前半小时可以建立怎样的降速流程？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["洗漱", "调暗灯光", "手机放远", "轻微拉伸"]
+  },
+  {
+    "id": "sleep-bed-association",
+    "question": "为什么不建议长时间躺在床上刷视频或学习高压内容？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["床", "睡眠建立连接", "焦虑复盘"]
+  },
+  {
+    "id": "sleep-caffeine-timing",
+    "question": "下午喝咖啡后心慌失眠，可以怎样调整咖啡因摄入？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["caffeine", "摄入提前", "减少一半"]
+  },
+  {
+    "id": "sleep-awake-leave-bed",
+    "question": "躺下二三十分钟仍很清醒时，可以怎么做？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["短暂离开床", "低刺激活动", "困意回来再上床"]
+  },
+  {
+    "id": "sleep-dont-watch-clock",
+    "question": "失眠时为什么不建议一直盯着时间？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["不要一直盯着时间", "增加", "焦虑"]
+  },
+  {
+    "id": "sleep-exam-recovery-plan",
+    "question": "考前失眠后，可以为第二天准备哪些补救方案？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["早餐", "提前到考场", "带水", "慢呼气"]
+  },
+  {
+    "id": "sleep-multweek-referral",
+    "question": "严重失眠持续多周并影响白天功能时，应建议联系谁？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["连续多周", "白天功能明显受损", "校医院", "心理中心"]
+  },
+  {
+    "id": "sleep-complex-warning-signs",
+    "question": "失眠伴随哪些症状时不应只按普通作息问题处理？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["极端兴奋", "冲动行为", "幻觉", "酒精问题"]
+  },
+  {
+    "id": "sleep-medication-boundary",
+    "question": "学生问应该吃多少安眠药时，CareTrace 能否给剂量建议？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["不提供安眠药建议", "不指导药物剂量", "医生评估"]
+  },
+  {
+    "id": "sleep-basic-self-care",
+    "question": "除了睡眠，基础自我照顾还包含哪些方面？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["规律吃饭", "补水", "适度运动", "保持卫生"]
+  },
+  {
+    "id": "sleep-small-reset-steps",
+    "question": "状态很差时，怎样用非常小的步骤重新启动日常功能？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["先喝水", "先吃一口", "先洗脸", "窗帘拉开"]
+  },
+  {
+    "id": "sleep-not-discipline-blame",
+    "question": "为什么不能把严重失眠简单归因于学生不自律？",
+    "expectedSources": ["sleep-routine-self-care.md"],
+    "expectedTerms": ["睡眠问题", "不能把严重失眠", "不自律"]
+  },
+  {
+    "id": "risk-protective-factors",
+    "question": "风险判断除了学生原话，还需要综合哪些保护性和现实因素？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["保护性因素", "现实支持", "当前是否安全"]
+  },
+  {
+    "id": "risk-low-pain-still-valid",
+    "question": "被判为 LOW 是否意味着学生没有真实痛苦？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["低风险不代表", "没有痛苦", "影响程度"]
+  },
+  {
+    "id": "risk-medium-support-plan",
+    "question": "中风险回复中的 24 小时支持计划可以围绕哪些现实行动？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["24 小时内", "减少独处", "可信任老师", "心理中心"]
+  },
+  {
+    "id": "risk-high-available-means",
+    "question": "已经准备了可用于自伤的工具，为什么会提高风险级别？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["准备了工具", "HIGH", "immediate danger"]
+  },
+  {
+    "id": "risk-high-farewell-message",
+    "question": "学生开始写告别信息时，风险策略如何看待这一信号？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["告别信息", "HIGH", "立即危险"]
+  },
+  {
+    "id": "risk-high-remove-means",
+    "question": "高风险回复可以怎样引导学生先降低眼前危险？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["物品放远", "有人在的地方", "马上联系"]
+  },
+  {
+    "id": "risk-no-moral-judgment",
+    "question": "高风险对话中为什么不能用自私等道德评判刺激学生？",
+    "expectedSources": ["risk-policy.md"],
+    "expectedTerms": ["责备", "激将", "道德评判", "承认痛苦"]
+  },
+  {
+    "id": "support-general-action-oriented",
+    "question": "校园心理助手的回答为什么要简洁并以行动为导向？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["concise", "action-oriented", "practical guidance"]
+  },
+  {
+    "id": "support-general-no-shame",
+    "question": "CareTrace 应避免用哪些态度回应处于困扰中的学生？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["not shame", "overpromise recovery", "non-judgmental"]
+  },
+  {
+    "id": "support-general-reflective-questions",
+    "question": "面对压力、人际和适应问题，助手除了稳定技巧还可以提供什么？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["reflective questions", "next-step planning", "stabilization skills"]
+  },
+  {
+    "id": "support-general-serious-persistent",
+    "question": "症状严重、持续或涉及立即危险时，助手应把学生连接到什么支持？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["serious", "persistent", "trusted human help", "immediate danger"]
+  },
+  {
+    "id": "support-general-not-therapist",
+    "question": "为什么 CareTrace 不应把自己描述成治疗师？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["not", "therapist", "supportive campus"]
+  },
+  {
+    "id": "support-general-crisis-escalation",
+    "question": "普通稳定建议和危机升级分别适用于什么类型的情况？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["stabilization skills", "crisis escalation", "immediate danger"]
+  },
+  {
+    "id": "support-general-counselor-referral",
+    "question": "校园心理助手什么时候应从日常建议转向 counselor referral？",
+    "expectedSources": ["campus-mental-health.md"],
+    "expectedTerms": ["counselor referral", "professional support", "persistent"]
   }
 ]

@@ -379,8 +379,10 @@ class KnowledgeService:
                 missing_texts.append(chunk.content)
         # 只对缺失的chunk进行向量化
         if missing_texts:
-            # 批量请求向量化
-            new_embeddings = self.vector_store.embed_texts(missing_texts)
+            # 兼容服务端批量上限；阿里 text-embedding 当前限制为 20。
+            new_embeddings: list[list[float]] = []
+            for start in range(0, len(missing_texts), 20):
+                new_embeddings.extend(self.vector_store.embed_texts(missing_texts[start : start + 20]))
             # 把新向量放到对应的原来的位置
             for index, embedding in zip(missing_indexes, new_embeddings):
                 embeddings[index] = embedding

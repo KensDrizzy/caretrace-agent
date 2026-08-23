@@ -104,9 +104,11 @@ class MindBridgeAgentHarness:
             raise
 
         self.save_message(user, session, MessageRole.USER, original_input)
-
+        # Harness 根据 Agent 结果创建心理报告，
+        # 报告只在 intent != CHAT 且有风险评估时创建
         report = self._create_report(user, session, original_input, agent_run)
         risk_level = report.risk_level if report is not None else None
+        # 创建工具计划，这就是 Agent Runtime 和 MCP/工具系统之间真正的连接点：
         # 创建AgentToolPlan，它不是 LLM 生成的，也不是某个 Agent 在 act() 中生成的，而是 Harness 根据报告结果确定性创建的。
         # 只有report_id和risk_level
         tool_plan = AgentToolPlan(report_id=report.id if report is not None else None, risk_level=risk_level)
@@ -194,6 +196,7 @@ class MindBridgeAgentHarness:
         self.save_message(user, session, MessageRole.ASSISTANT, content)
 
 # 聊天处理结束后，会根据风险报告调用
+# 默认走异步队列
     async def dispatch_tools(self, tool_plan: AgentToolPlan) -> list[dict]:
         """执行回复后工具；返回结构化执行记录，任何失败都不中断主流程。"""
         if tool_plan.report_id is None:
