@@ -10,7 +10,7 @@
 - 心理风险评估：高风险词典优先、LLM JSON 评估、关键词兜底。
 - 后台报告：记录情绪标签、情绪分数、风险等级、置信度和摘要，但学生端不展示后台评估结果。
 - 数据闭环：咨询/风险消息完整写入 MySQL，短期上下文写入 Redis，高风险消息写入 Excel 台账并通过邮件发送预警。
-- 本地微调模型接入：支持通过 Ollama 加载 `mindbridge-qwen2.5-7b-ft-q4_k_m.gguf`。
+- 本地微调模型接入：支持通过 Ollama 加载 Qwen2.5 情绪分类模型和 Qwen3-14B 校园心理对话模型。
 - OpenAI-compatible API 接入：也可切换到云端模型。
 - MCP 工具服务：暴露 Excel 报告写入和风险通知工具，后端高风险后处理通过 MCP client 调用这些工具。
 - Agent Trace v2：每次请求一条统一 `trace_id` 的可回放轨迹，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复；事件落 `agent_trace_events` 表。
@@ -164,6 +164,7 @@ docker compose up -d --build
 
 ```text
 mindbridge-qwen2.5-7b-ft:latest
+caretrace-qwen3-14b-ft:latest
 ```
 
 ## Chroma 向量库与快照
@@ -305,6 +306,33 @@ curl -u student:student123 http://127.0.0.1:8080/api/agent/status
 ```
 
 返回结果中的 `finetunedModel.ggufExists` 和 `finetunedModel.modelfileExists` 会显示模型资产是否就绪。
+`campusModel` 字段显示 Qwen3-14B 校园心理模型的资产状态。
+
+### 接入 Qwen3-14B 校园心理模型
+
+Qwen3-14B 是面向校园心理陪伴场景的完整对话模型，不要求只输出情绪标签。推荐让它负责理解、上下文检索改写、回复生成、安全语义审核和协调；Qwen2.5 继续负责严格的情绪/风险标签分类。
+
+```bash
+./scripts/create-campus-model.sh
+```
+
+启用本地混合链路（可写入 `.env`）：
+
+```env
+CAMPUS_MODEL_NAME=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_UNDERSTANDING_PROVIDER=ollama
+AGENT_MODEL_UNDERSTANDING_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_CONTEXT_PROVIDER=ollama
+AGENT_MODEL_CONTEXT_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_RESPONSE_PROVIDER=ollama
+AGENT_MODEL_RESPONSE_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_SAFETY_REVIEW_PROVIDER=ollama
+AGENT_MODEL_SAFETY_REVIEW_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_COORDINATOR_PROVIDER=ollama
+AGENT_MODEL_COORDINATOR_MODEL=caretrace-qwen3-14b-ft:latest
+```
+
+`AGENT_MODEL_SAFETY_*` 可继续指向 `mindbridge-qwen2.5-7b-ft:latest`，这样严格标签分类仍使用专门的 Qwen2.5 模型。模型权重文件不会提交到 Git。
 同时 `agentFramework.active` 会显示当前实际使用的 Agent 编排框架：
 
 ```text

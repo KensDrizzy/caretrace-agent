@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     finetuned_model_name: str = "mindbridge-qwen2.5-7b-ft:latest"
     finetuned_model_dir: str = "finetuning/qwen25-7b-lora-mood-classify"
     finetuned_model_file: str = "mindbridge-qwen2.5-7b-ft-q4_k_m.gguf"
+    # Qwen3-14B 校园心理场景模型：用于理解、检索改写、回复生成和安全语义审核。
+    campus_model_name: str = "caretrace-qwen3-14b-ft:latest"
+    campus_model_dir: str = "finetuning/qwen3-14b-lora-full"
+    campus_model_file: str = "caretrace-qwen3-14b-ft-q4_k_m.gguf"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str = ""
     openai_model: str = "gpt-5.6-luna"

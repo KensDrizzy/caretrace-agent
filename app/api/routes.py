@@ -13,7 +13,7 @@ from app.models.entities import UserAccount
 from app.schemas.dtos import ChatRequest, ChatSessionRenameRequest, ChatSessionResponse, ConversationResponse, KnowledgeIngestRequest, KnowledgeIngestResponse, authority
 from app.services.chat import ChatService
 from app.services.knowledge import KnowledgeService
-from app.services.model_assets import finetuned_model_status
+from app.services.model_assets import campus_model_status, finetuned_model_status
 from app.services.report import ReportService
 from app.services.skills import MindBridgeSkillLibrary
 
@@ -66,6 +66,7 @@ def agent_status(user: Annotated[UserAccount, Depends(current_user)]):
         "realModelEnabled": provider in {"ollama", "openai", "deepseek"},
         "agentFramework": framework,
         "finetunedModel": finetuned_model_status(settings),
+        "campusModel": campus_model_status(settings),
         "agents": [
             {"name": "CoordinatorAgent", "status": "READY", "description": "维护任务板、预算、安全门槛、冲突仲裁和最终采纳"},
             {"name": "UnderstandingAgent", "status": "READY", "description": "独立理解用户输入，发布 intent artifact"},
