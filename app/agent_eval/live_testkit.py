@@ -46,6 +46,10 @@ def live_eval_settings(profile: str = "env", keep_db: bool = False, db_path: Pat
         "alert_email_delivery_mode": "log",
         # 固定随机性，让 A/B 差异可归因于模型而非采样
         "ai_temperature": 0.0,
+        # Live 评测需要在有限时间内完成多次 Agent 调用；同时关闭 Qwen3
+        # thinking，避免审核调用把 2048 token 全耗在隐藏思考上。
+        "ai_max_tokens": 512,
+        "ollama_think": False,
     }
     settings = Settings(**overrides)
     apply_ablation_profile(settings, profile)
