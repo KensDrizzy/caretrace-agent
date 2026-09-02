@@ -811,7 +811,10 @@ class ResponseAgent(BaseAutonomousAgent):
         memory_brief = context_payload.get("memoryBrief") or board.memory_brief or "无相关历史记忆。"
         knowledge = context_payload.get("retrievedKnowledge") or []
         skill_context = context_payload.get("skillContext") or ""
-        knowledge_context = "\n\n".join(f"- [{item.source}] {item.content}" for item in knowledge)
+        knowledge_context = _bounded_knowledge_context(
+            knowledge,
+            max_chars=getattr(self.services.settings, "response_context_max_chars", 3200),
+        )
         if intent == IntentType.CHAT and risk == RiskLevel.LOW:
             messages = [
                 PromptTemplates.answer_system_prompt(IntentType.CHAT, RiskLevel.LOW, "", self.services.user.display_name),
@@ -972,9 +975,39 @@ def fallback_response_text(risk: RiskLevel) -> str:
             "只挑一个最小的步骤先处理。如果这种状态持续，建议联系学校心理中心或辅导员一起看一看。"
         )
     return (
-        "我在。你可以先说说现在最具体的困扰，我们一步一步拆开来看。"
-        "如果感觉撑不住，请马上联系身边可信任的人或学校心理中心。"
+        "听到你最近压力很大，我能理解那种被很多事情一起推着走的感觉。"
+        "这不代表你不够坚强，先不用急着一次解决所有问题。可以先把压力分成三类："
+        "今天必须处理的、可以慢慢推进的、暂时无法控制的；然后只选一件最小的事做十分钟。"
+        "如果同时有持续失眠、吃不下饭或情绪越来越低落，建议联系身边可信任的人、辅导员或学校心理中心一起看看。"
     )
+
+
+def _bounded_knowledge_context(knowledge: list[Any], max_chars: int = 6000) -> str:
+    """Keep the response prompt small enough for local Qwen inference.
+
+    Retrieved chunks can be large (especially the student self-help guide). Sending
+    all four chunks verbatim makes the 14B local model spend most of its time on
+    prompt evaluation and increases the chance of the request hitting the HTTP
+    timeout. Preserve source labels while enforcing a hard total character cap.
+    """
+    limit = max(1000, int(max_chars))
+    parts: list[str] = []
+    used = 0
+    for item in knowledge:
+        source = str(getattr(item, "source", "knowledge"))
+        content = str(getattr(item, "content", "")).strip()
+        if not content:
+            continue
+        prefix = f"- [{source}] "
+        remaining = limit - used - len(prefix)
+        if remaining <= 0:
+            break
+        chunk = content[:remaining]
+        parts.append(prefix + chunk)
+        used += len(prefix) + len(chunk) + 2
+        if len(chunk) < len(content) or used >= limit:
+            break
+    return "\n\n".join(parts)
 
 
 def _contains_internal_process_disclosure(text: str) -> bool:

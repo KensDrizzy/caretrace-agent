@@ -10,6 +10,7 @@ from app.services.assessment import (
     match_chinese_emotion_label,
     FINETUNED_EMOTION_INSTRUCTION,
 )
+from app.agents.autonomous import _bounded_knowledge_context, fallback_response_text
 
 
 class _FakeSettings:
@@ -126,6 +127,7 @@ class PerTaskModelRoutingTests(unittest.TestCase):
         self.assertEqual(profile.provider, "deepseek")
         self.assertEqual(profile.model, "deepseek-v4-flash")
 
+
     def test_client_for_alias_writes_back_provider(self):
         registry = AgentModelRegistry(self._settings())
         local_client = registry.client_for_alias("safety")
@@ -143,6 +145,20 @@ class PerTaskModelRoutingTests(unittest.TestCase):
         profile = registry.profile_for_alias("context")
         self.assertEqual(profile.provider, "deepseek")
         self.assertEqual(profile.model, "deepseek-v4-flash")
+
+
+class LocalResponseGuardTests(unittest.TestCase):
+    def test_knowledge_context_is_bounded(self):
+        class Item:
+            source = "guide.md"
+            content = "x" * 10000
+        context = _bounded_knowledge_context([Item()], max_chars=1000)
+        self.assertLessEqual(len(context), 1000)
+
+    def test_low_risk_fallback_is_supportive_and_actionable(self):
+        text = fallback_response_text(RiskLevel.LOW)
+        self.assertIn("压力很大", text)
+        self.assertIn("十分钟", text)
 
 
 if __name__ == "__main__":

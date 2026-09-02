@@ -14,24 +14,34 @@ class Settings(BaseSettings):
     agent_model_default_model: str = ""
     agent_model_coordinator_provider: str = ""
     agent_model_coordinator_model: str = ""
+    agent_model_coordinator_max_tokens: int = 256
     agent_model_understanding_provider: str = ""
     agent_model_understanding_model: str = ""
+    agent_model_understanding_max_tokens: int = 256
     agent_model_safety_provider: str = ""
     agent_model_safety_model: str = ""
+    agent_model_safety_max_tokens: int = 128
     # SafetyAgent 内部 per-task 拆分：情绪/风险分类走 safety（可指向本地微调模型），
     # 候选回复的语义审核走 safety_review（需要强推理，通常指向 API 大模型）。
     agent_model_safety_review_provider: str = ""
     agent_model_safety_review_model: str = ""
+    agent_model_safety_review_max_tokens: int = 256
     agent_model_context_provider: str = ""
     agent_model_context_model: str = ""
+    agent_model_context_max_tokens: int = 256
     agent_model_response_provider: str = ""
     agent_model_response_model: str = ""
+    agent_model_response_max_tokens: int = 768
     ai_provider: str = "ollama"
     ai_temperature: float = 0.35
     ai_max_tokens: int = 2048
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "mindbridge-qwen2.5-7b-ft:latest"
     ollama_think: bool = False
+    ollama_timeout_seconds: float = 180.0
+    # Qwen3 campus prompts include compact RAG evidence and agent instructions.
+    # Keep enough headroom for a full support turn instead of Ollama's 4096 default.
+    ollama_num_ctx: int = 4096
     finetuned_model_name: str = "mindbridge-qwen2.5-7b-ft:latest"
     finetuned_model_dir: str = "finetuning/qwen25-7b-lora-mood-classify"
     finetuned_model_file: str = "mindbridge-qwen2.5-7b-ft-q4_k_m.gguf"
@@ -60,6 +70,9 @@ class Settings(BaseSettings):
     knowledge_chunk_size: int = 512
     knowledge_chunk_overlap: int = 64
     knowledge_parent_chunk_size: int = 2000
+    # Keep the response prompt within the default 4K context window even when
+    # the knowledge store returns a long multi-question guide.
+    response_context_max_chars: int = 3200
     knowledge_hybrid_vector_weight: float = 0.65
     knowledge_hybrid_bm25_weight: float = 0.35
     knowledge_rerank_enabled: bool = True

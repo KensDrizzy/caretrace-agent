@@ -28,6 +28,12 @@ _sync_clients: dict[str, httpx.Client] = {}
 _async_clients: dict[str, httpx.AsyncClient] = {}
 
 
+def _timeout_seconds(settings: Settings) -> float:
+    if str(getattr(settings, "ai_provider", "")).lower() == "ollama":
+        return float(getattr(settings, "ollama_timeout_seconds", 60.0))
+    return 60.0
+
+
 def _client_key(settings: Settings) -> str:
     """Return a key that identifies a unique HTTP client configuration."""
     # Only the provider endpoint and auth token affect the underlying connection.
@@ -35,7 +41,8 @@ def _client_key(settings: Settings) -> str:
         f"{settings.ai_provider}::"
         f"{settings.ollama_base_url}::"
         f"{settings.openai_base_url}::"
-        f"{settings.openai_api_key}"
+        f"{settings.openai_api_key}::"
+        f"{_timeout_seconds(settings)}"
     )
 
 
@@ -44,7 +51,7 @@ def get_sync_client(settings: Settings) -> httpx.Client:
     key = _client_key(settings)
     client = _sync_clients.get(key)
     if client is None:
-        client = httpx.Client(limits=_DEFAULT_LIMITS, timeout=60.0)
+        client = httpx.Client(limits=_DEFAULT_LIMITS, timeout=_timeout_seconds(settings))
         _sync_clients[key] = client
     return client
 
@@ -54,7 +61,7 @@ def get_async_client(settings: Settings) -> httpx.AsyncClient:
     key = _client_key(settings)
     client = _async_clients.get(key)
     if client is None:
-        client = httpx.AsyncClient(limits=_DEFAULT_LIMITS, timeout=60.0)
+        client = httpx.AsyncClient(limits=_DEFAULT_LIMITS, timeout=_timeout_seconds(settings))
         _async_clients[key] = client
     return client
 
