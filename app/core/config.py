@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     ai_max_tokens: int = 2048
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "mindbridge-qwen2.5-7b-ft:latest"
+    ollama_think: bool = False
     finetuned_model_name: str = "mindbridge-qwen2.5-7b-ft:latest"
     finetuned_model_dir: str = "finetuning/qwen25-7b-lora-mood-classify"
     finetuned_model_file: str = "mindbridge-qwen2.5-7b-ft-q4_k_m.gguf"

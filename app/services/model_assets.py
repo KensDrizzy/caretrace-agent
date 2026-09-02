@@ -15,12 +15,14 @@ def finetuned_model_status(settings: Settings) -> dict:
 
 
 def campus_model_status(settings: Settings) -> dict:
-    return model_status(
+    status = model_status(
         settings,
         name=settings.campus_model_name,
         model_dir=settings.campus_model_dir,
         model_file=settings.campus_model_file,
     )
+    status["ollamaCreateCommand"] = "scripts/create-campus-model.sh"
+    return status
 
 
 def model_status(settings: Settings, *, name: str, model_dir: str, model_file: str) -> dict:

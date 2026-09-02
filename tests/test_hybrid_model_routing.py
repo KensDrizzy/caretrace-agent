@@ -136,7 +136,9 @@ class PerTaskModelRoutingTests(unittest.TestCase):
         self.assertEqual(review_client.settings.deepseek_model, "deepseek-v4-flash")
 
     def test_empty_profile_falls_back_to_global(self):
-        settings = Settings(ai_provider="deepseek", deepseek_model="deepseek-v4-flash")
+        # Ignore the developer's local .env so this test really exercises an
+        # empty per-agent profile falling back to the global provider.
+        settings = Settings(_env_file=None, ai_provider="deepseek", deepseek_model="deepseek-v4-flash")
         registry = AgentModelRegistry(settings)
         profile = registry.profile_for_alias("context")
         self.assertEqual(profile.provider, "deepseek")

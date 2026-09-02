@@ -168,6 +168,9 @@ class AiClient:
             "model": self.settings.ollama_model,
             "messages": [m.model_dump() for m in messages],
             "stream": stream,
+            # Qwen3 默认会把 token 预算消耗在 thinking 字段；CareTrace 只需要
+            # 可展示的 content，显式关闭以避免空回复和不必要的延迟。
+            "think": bool(getattr(self.settings, "ollama_think", False)),
             "options": {"temperature": self.settings.ai_temperature, "num_predict": self.settings.ai_max_tokens},
         }
         try:
@@ -190,6 +193,7 @@ class AiClient:
             "model": self.settings.ollama_model,
             "messages": [m.model_dump() for m in messages],
             "stream": True,
+            "think": bool(getattr(self.settings, "ollama_think", False)),
             "options": {"temperature": self.settings.ai_temperature, "num_predict": self.settings.ai_max_tokens},
         }
         try:
