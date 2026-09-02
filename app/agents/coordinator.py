@@ -64,11 +64,11 @@ class EventDrivenCoordinator:
             # task                  # 要执行的任务
             # candidate.agent       # 实际执行任务的 Agent
             # candidate.decision    # 该 Agent 的认领决定
-            candidates = self._claim_candidates(board, claim_counts)
+            board, candidates = self._claim_candidates(board, claim_counts)
             # 如果没有任何 Agent 愿意认领任务，尝试强制生成回复任务 force_response=True
             if not candidates:
                 board = self._derive_missing_work(board, force_response=True)
-                candidates = self._claim_candidates(board, claim_counts)
+                board, candidates = self._claim_candidates(board, claim_counts)
                 if not candidates:
                     break
             # 4. 执行被认领的任务：在这里调用 agent.act()
@@ -213,10 +213,10 @@ class EventDrivenCoordinator:
             priority=TaskPriority.CRITICAL if risk == RiskLevel.HIGH else TaskPriority.NORMAL,
             condition=needs_context,
         )
-        # 判断是否已经有回复方案：检查黑板中是否已经存在最新的 response_proposal 产物。
-        # 这里的 response_proposal 可以理解为：
+        # 判断是否已经有回复方案：检查黑板中是否已经存在最新的 response_candidate 产物。
+        # 这里的 response_candidate 可以理解为：
         # Agent 提出的候选回复，但还没有经过最终安全审核。
-        has_response = board.latest_artifact("response_proposal") is not None
+        has_response = board.latest_artifact("response_candidate") is not None
         # 判断是否可以生成回复
         # case1:强制创建，这通常用于系统已经没有可认领任务时，强制推动流程继续。
         # case2:有意图和风险分析结果，
@@ -231,7 +231,7 @@ class EventDrivenCoordinator:
         # 创建候选回复任务
         board = self._ensure_task_for_missing_artifact(
             board,
-            artifact_kind="response_proposal",
+            artifact_kind="response_candidate",
             task_id="task:propose-response",
             title="Propose candidate response",
             capability=AgentCapability.RESPONSE,
@@ -239,7 +239,7 @@ class EventDrivenCoordinator:
             condition=can_request_response and not has_response,
         )
         # 获取回复、审核和批评结果
-        response = board.latest_artifact("response_proposal")
+        response = board.latest_artifact("response_candidate")
         review = board.latest_artifact("safety_review")
         critique = board.latest_artifact("critique")
         if response and (review is None or review.metadata.get("responseArtifactId") != response.id):
@@ -309,22 +309,23 @@ class EventDrivenCoordinator:
             AgentEvent(type=AgentEventType.TASK_CREATED, actor=self.coordinator_agent.name, task_id=task.id, message=task.title)
         )
     # 遍历所有 open tasks，调用每个 Agent 的 decide()
-    # candidate_decisions_for 会调用 agent.decide(task, board)。
-    # 如果 Agent 返回 AgentDecision(True, ...)，就表示它愿意认领这个任务。
-    # 从所有开放任务中，筛选出愿意认领任务的 Agent，并按照优先级、置信度选择本轮实际执行的任务。
+    # evaluate_decisions_for 会调用 agent.decide(task, board)，同时返回愿意认领与拒绝认领的决策。
+    # 每个决策（含拒绝）都落一条 DECISION_EVALUATED 事件，再按优先级、置信度选出本轮执行集。
     def _claim_candidates(self, board: CollaborationBlackboard, claim_counts: dict[str, int]):
-        selected = [] # 最终选中、本轮真正执行的组合。
-        task_candidates = [] # 所有符合条件的“任务-Agent”组合。
-        # 遍历所有开放任务，获取愿意认领任务的 Agent
+        evaluated: list[tuple[AgentTask, AgentCandidate]] = []  # 全部“任务-Agent”决策（含拒绝）
+        claiming: list[tuple[AgentTask, AgentCandidate]] = []  # 愿意认领且未超认领上限
+        # 遍历所有开放任务，评估每个 Agent 的认领决策
         for task in board.open_tasks():
-            # 若agent返回decision.claim == True，代表认领
-            for candidate in self.registry.candidate_decisions_for(task, board):
+            for candidate in self.registry.evaluate_decisions_for(task, board):
+                evaluated.append((task, candidate))
+                if not candidate.decision.claim:
+                    continue
                 # 如果它已经达到最大认领次数，就跳过该候选者。
                 if claim_counts[candidate.agent.profile.name] >= self.max_claims_per_agent:
                     continue
-                task_candidates.append((task, candidate)) # 符合条件的候选者加入列表 (任务, Agent候选者)
+                claiming.append((task, candidate))
         # 按照(任务优先级, Agent 置信度, Agent 名称)排序
-        task_candidates.sort(
+        claiming.sort(
             key=lambda item: (
                 PRIORITY_ORDER[item[0].priority],
                 item[1].decision.confidence,
@@ -334,8 +335,9 @@ class EventDrivenCoordinator:
         )
         seen = set()
         selected_agents = set()
+        selected = []  # 最终选中、本轮真正执行的组合。
         # 选择本轮执行者
-        for task, candidate in task_candidates:
+        for task, candidate in claiming:
             key = (task.id, candidate.agent.profile.name) # 类似("task:generate-response", "ResponseAgent")
             # 跳过两种情况：
             # 同一个任务和同一个 Agent 已经处理过；
@@ -348,21 +350,42 @@ class EventDrivenCoordinator:
             selected_agents.add(candidate.agent.profile.name)
             if len(selected) >= self.max_claims_per_round:
                 break
-        # 最终返回
-        # [
-        #     (task1, candidate1),
-        #     (task2, candidate2),
-        # ]
-        return selected
+        selected_keys = {(task.id, candidate.agent.profile.name) for task, candidate in selected}
+        # 把每个 Agent 的认领/拒绝决策（含能力不匹配、等待前置产物等原因）都写进 Trace。
+        for task, candidate in evaluated:
+            decision = candidate.decision
+            board = board.append_event(
+                AgentEvent(
+                    type=AgentEventType.DECISION_EVALUATED,
+                    actor=candidate.agent.profile.name,
+                    task_id=task.id,
+                    message=decision.reason,
+                    metadata={
+                        "taskId": task.id,
+                        "claim": bool(decision.claim),
+                        "selected": (task.id, candidate.agent.profile.name) in selected_keys,
+                        "confidence": decision.confidence,
+                        "reasonCode": decision.reason_code,
+                        "reason": decision.reason,
+                    },
+                )
+            )
+        return board, selected
 
     def _try_accept_final(self, board: CollaborationBlackboard) -> CollaborationBlackboard:
         if board.final_artifact_id:
             return board
-        response = board.latest_artifact("response_proposal")
+        response = board.latest_artifact("response_candidate")
         review = board.latest_artifact("safety_review")
         if response is None or review is None:
             return board
         if review.metadata.get("responseArtifactId") != response.id:
+            return board
+        # 审核必须针对当前版本的候选：候选被修订升版后，旧版本审核不得采纳。
+        reviewed_version = review.metadata.get(
+            "responseArtifactVersion", review.payload.get("responseArtifactVersion")
+        )
+        if reviewed_version is not None and reviewed_version != getattr(response, "version", reviewed_version):
             return board
         if not review.payload.get("approved"):
             return board

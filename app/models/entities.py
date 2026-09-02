@@ -84,6 +84,8 @@ class KnowledgeChunk(Base):
     embedding_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Hash of the full source document. Used to skip re-chunking unchanged files on startup.
     content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    parent_index: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    parent_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
     __table_args__ = (

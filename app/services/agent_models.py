@@ -30,7 +30,14 @@ class AgentModelRegistry:
         self.settings = settings
 
     def profile_for(self, agent_name: str) -> AgentModelProfile:
-        alias = AGENT_MODEL_ALIASES.get(agent_name, _snake(agent_name.removesuffix("Agent")))
+        alias = self.alias_for(agent_name)
+        return self.profile_for_alias(alias)
+
+    def alias_for(self, agent_name: str) -> str:
+        return AGENT_MODEL_ALIASES.get(agent_name, _snake(agent_name.removesuffix("Agent")))
+
+    def profile_for_alias(self, alias: str) -> AgentModelProfile:
+        """按 profile 别名（understanding/safety/safety_review/context/response/...）解析模型配置。"""
         provider = self._setting(f"agent_model_{alias}_provider", self._default_provider())
         model = self._setting(f"agent_model_{alias}_model", self._default_model(provider))
         temperature = float(self._setting(f"agent_model_{alias}_temperature", getattr(self.settings, "ai_temperature", 0.35)))
@@ -38,7 +45,11 @@ class AgentModelRegistry:
         return AgentModelProfile(provider=provider, model=model, temperature=temperature, max_tokens=max_tokens)
 
     def client_for(self, agent_name: str, metrics_hook: Callable[[LlmCallMetrics], None] | None = None) -> AiClient:
-        profile = self.profile_for(agent_name)
+        return self.client_for_alias(self.alias_for(agent_name), metrics_hook=metrics_hook)
+
+    def client_for_alias(self, alias: str, metrics_hook: Callable[[LlmCallMetrics], None] | None = None) -> AiClient:
+        """同一个 Agent 内部不同任务可用不同 profile（如 Safety 分类走本地、语义审核走 API）。"""
+        profile = self.profile_for_alias(alias)
         settings = copy.copy(self.settings)
         settings.ai_provider = profile.provider
         settings.ai_temperature = profile.temperature

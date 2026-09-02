@@ -165,6 +165,15 @@ class ReportService:
         rows = self.db.query(ChatSession).filter(ChatSession.user_id == user_id).order_by(ChatSession.updated_at.desc()).limit(50).all()
         return [ChatSessionResponse(sessionId=row.public_id, title=row.title, updatedAt=row.updated_at) for row in rows]
 
+    def rename_user_session(self, user_id: int, public_id: str, title: str) -> ChatSessionResponse:
+        session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id).first()
+        if session is None:
+            raise ValueError("Session not found")
+        session.title = title
+        self.db.commit()
+        self.db.refresh(session)
+        return ChatSessionResponse(sessionId=session.public_id, title=session.title, updatedAt=session.updated_at)
+
     def user_conversation(self, user_id: int, public_id: str) -> ConversationResponse:
         session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id).first()
         if session is None:

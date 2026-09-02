@@ -43,7 +43,7 @@ COPY --from=builder /opt/venv /opt/venv
 
 # Copy application code and the Ollama Modelfile definition.
 COPY app ./app
-COPY models/mindbridge-qwen2.5-7b-ft/Modelfile ./models/mindbridge-qwen2.5-7b-ft/Modelfile
+COPY finetuning/qwen25-7b-lora-mood-classify/Modelfile ./finetuning/qwen25-7b-lora-mood-classify/Modelfile
 
 EXPOSE 8080
 

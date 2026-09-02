@@ -1,0 +1,113 @@
+<html style="margin:0;padding:0;">
+<div style="background-color:transparent;box-sizing:border-box;font-family:'Roboto','PingFang SC','Segoe UI',Arial,sans-serif;color:#1A1B1C;">
+  <div id="mbflow" style="box-sizing:border-box;padding:2px 0;"></div>
+  <script>
+  (function(){
+    try {
+      var root = document.getElementById('mbflow');
+      if (!root) return;
+      var steps = [
+        {t:'训练数据集', b:'缺失·需重建', c:'#8A5A00', bg:'rgba(250,173,20,0.18)',
+         loc:'data/lora/psychqa_synthetic.jsonl（guide 中 2400 条，9:1 划分）',
+         cmd:'每行一条 JSONL：{"instruction":"分析学生情绪","input":"最近考试…","output":"焦虑"}',
+         out:'尚无此文件 —— 当前仓库没有 data/lora',
+         note:'这是“自己微调”的核心工作量：用 tests/eval/caretrace_gold.jsonl（120 条）、app/knowledge 的 13 篇 md、.firecrawl 权威心理资料做素材，改写成 instruction/input/output 指令对，规模建议 1000~3000 条。'},
+        {t:'云 GPU 环境', b:'需自己租', c:'#1B5E8A', bg:'rgba(139,200,234,0.18)',
+         loc:'云 GPU：A10G 24GB / RTX 4090 / A5000 / A100；系统盘 ≥60GB',
+         cmd:'nvidia-smi 验证；python3 -m venv /root/mindbridge-lora-env；pip install -U ms-swift transformers accelerate peft datasets safetensors；export HF_ENDPOINT=https://hf-mirror.com',
+         out:'可用的训练环境',
+         note:'guide 实测 A10G 24GB 可完成 LoRA 微调；按小时计费约几十元。'},
+        {t:'LoRA 微调', b:'需自己跑', c:'#1B5E8A', bg:'rgba(139,200,234,0.18)',
+         loc:'/root/MindBridge/output/qwen25-7b-mindbridge-lora/…/checkpoint-405',
+         cmd:'swift sft --model Qwen/Qwen2.5-7B-Instruct --dataset <jsonl> --tuner_type lora --lora_rank 8 --lora_alpha 32 --target_modules all-linear --torch_dtype bfloat16 --num_train_epochs 3 --per_device_train_batch_size 1 --gradient_accumulation_steps 16 --learning_rate 1e-4 --max_length 512 --split_dataset_ratio 0.1 --output_dir …',
+         out:'checkpoint-405/adapter_model.safetensors + adapter_config.json',
+         note:'约 405 步，可训练参数约 2018 万（0.26%）；显存不够改 --max_length 256 或 --torch_dtype float16。'},
+        {t:'合并 LoRA', b:'需自己跑', c:'#1B5E8A', bg:'rgba(139,200,234,0.18)',
+         loc:'/root/MindBridge/output/mindbridge-qwen2.5-7b-ft-hf',
+         cmd:'swift export --adapters <checkpoint-405> --merge_lora true --output_dir <hf>',
+         out:'HF 完整模型（4×safetensors，约 15GB）',
+         note:'在云端做，基础权重已在缓存。'},
+        {t:'转 GGUF (F16)', b:'需自己跑', c:'#1B5E8A', bg:'rgba(139,200,234,0.18)',
+         loc:'/root/llama.cpp + output/mindbridge-qwen2.5-7b-ft-f16.gguf',
+         cmd:'python3 convert_hf_to_gguf.py <hf> --outfile mindbridge-qwen2.5-7b-ft-f16.gguf --outtype f16',
+         out:'F16 GGUF（约 15.2GB）',
+         note:'先 git clone 或下载 llama.cpp，pip install -r requirements.txt。'},
+        {t:'量化 Q4_K_M', b:'需自己跑', c:'#1B5E8A', bg:'rgba(139,200,234,0.18)',
+         loc:'output/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf',
+         cmd:'cmake -B build && cmake --build build --config Release -j；./build/bin/llama-quantize <f16> <q4k> Q4_K_M',
+         out:'Q4_K_M GGUF（4.4~4.7GB，最终交付物）',
+         note:'量化后可删 F16 文件释放云盘空间。'},
+        {t:'接入 Ollama', b:'已就绪', c:'#2E7D17', bg:'rgba(82,196,26,0.12)',
+         loc:'models/mindbridge-qwen2.5-7b-ft/（GGUF + Modelfile 已存在）',
+         cmd:'./scripts/create-finetuned-model.sh → mindbridge-qwen2.5-7b-ft:latest',
+         out:'本机 ollama 已注册该模型（4.7GB）',
+         note:'Modelfile 含 CareTrace SYSTEM + temperature 0.35 + ChatML 模板；换模型改 FROM 与 SYSTEM 即可。'},
+        {t:'项目调用', b:'已配置', c:'#2E7D17', bg:'rgba(82,196,26,0.12)',
+         loc:'app/core/config.py：AI_PROVIDER=ollama、OLLAMA_MODEL=mindbridge-qwen2.5-7b-ft:latest',
+         cmd:'AI_PROVIDER=ollama ./scripts/run-dev.sh → http://localhost:8080',
+         out:'后端走本地微调模型',
+         note:'当前 .env 的 AI_PROVIDER=deepseek 是开发用；切回 ollama 即用本地微调模型。'}
+      ];
+      var html = '';
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">';
+      html += '<div style="font-size:16px;font-weight:600;">MindBridge → CareTrace 微调全流程</div>';
+      html += '<div style="font-size:12px;color:#6B7280;">guide 8 阶段 × 当前项目现状（点击步骤查看详情）</div>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">';
+      html += '<div style="font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(82,196,26,0.12);color:#2E7D17;">● 已就绪</div>';
+      html += '<div style="font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(139,200,234,0.18);color:#1B5E8A;">● 需自己跑/租</div>';
+      html += '<div style="font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(250,173,20,0.18);color:#8A5A00;">● 缺失·需重建</div>';
+      html += '</div>';
+      html += '<div id="mbdetail"></div>';
+      html += '<div id="mblist"></div>';
+      root.innerHTML = html;
+      var list = document.getElementById('mblist');
+      var detail = document.getElementById('mbdetail');
+      var listHtml = '';
+      for (var i = 0; i < steps.length; i++) {
+        var s = steps[i];
+        listHtml += '<div data-i="' + i + '" style="display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(0,0,0,0.08);border-radius:12px;margin-bottom:8px;cursor:pointer;background:#FFFFFF;box-sizing:border-box;">';
+        listHtml += '<div style="width:26px;height:26px;border-radius:50%;background:#8BC8EA;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;flex:0 0 auto;">' + (i + 1) + '</div>';
+        listHtml += '<div style="flex:1;min-width:0;">';
+        listHtml += '<div style="font-size:14px;font-weight:600;">' + s.t + '</div>';
+        listHtml += '<div style="font-size:12px;color:#6B7280;word-break:break-all;">' + s.loc + '</div>';
+        listHtml += '</div>';
+        listHtml += '<div style="font-size:12px;padding:4px 10px;border-radius:999px;background:' + s.bg + ';color:' + s.c + ';flex:0 0 auto;white-space:nowrap;">' + s.b + '</div>';
+        listHtml += '</div>';
+      }
+      list.innerHTML = listHtml;
+      function renderDetail(i) {
+        var s = steps[i];
+        var rows = [
+          ['位置 / 产物', s.loc],
+          ['关键命令', s.cmd],
+          ['输出', s.out],
+          ['说明', s.note]
+        ];
+        var d = '';
+        d += '<div style="border:1px solid rgba(0,0,0,0.08);border-radius:12px;padding:14px;background:#FFFFFF;margin-bottom:10px;box-sizing:border-box;">';
+        d += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">';
+        d += '<div style="width:26px;height:26px;border-radius:50%;background:#8BC8EA;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;">' + (i + 1) + '</div>';
+        d += '<div style="font-size:15px;font-weight:600;">' + s.t + '</div>';
+        d += '<div style="font-size:12px;padding:3px 9px;border-radius:999px;background:' + s.bg + ';color:' + s.c + ';">' + s.b + '</div>';
+        d += '</div>';
+        for (var k = 0; k < rows.length; k++) {
+          d += '<div style="margin-bottom:8px;">';
+          d += '<div style="font-size:12px;color:#1B5E8A;font-weight:600;margin-bottom:2px;">' + rows[k][0] + '</div>';
+          d += '<div style="font-size:13px;line-height:1.55;word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;">' + rows[k][1] + '</div>';
+          d += '</div>';
+        }
+        d += '</div>';
+        detail.innerHTML = d;
+      }
+      renderDetail(0);
+      list.addEventListener('click', function(e) {
+        var row = e.target.closest ? e.target.closest('[data-i]') : null;
+        if (!row) return;
+        renderDetail(parseInt(row.getAttribute('data-i'), 10));
+      });
+    } catch(e) { console.error(e); }
+  })();
+  </script>
+</div>
+</html>

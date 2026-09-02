@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>开源校园心理相关数据集调研报告</title>
+<style>
+  :root {
+    --primary: #0d9488;
+    --primary-light: #ccfbf1;
+    --primary-dark: #0f766e;
+    --accent: #f59e0b;
+    --accent-light: #fef3c7;
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --success: #22c55e;
+    --success-light: #dcfce7;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-900: #111827;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--gray-900);
+    background: var(--gray-50);
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+    color: white;
+    padding: 48px 40px;
+    border-radius: 16px;
+    margin-bottom: 32px;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .header .subtitle { font-size: 15px; opacity: 0.9; margin-bottom: 16px; }
+  .header .meta { display: flex; gap: 24px; font-size: 13px; opacity: 0.85; flex-wrap: wrap; }
+  .header .meta span { display: flex; align-items: center; gap: 4px; }
+
+  /* Section */
+  .section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 16px;
+    padding-left: 12px;
+    border-left: 4px solid var(--primary);
+  }
+  .section-desc { color: var(--gray-500); font-size: 14px; margin-bottom: 16px; }
+
+  /* Cards */
+  .card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    border: 1px solid var(--gray-200);
+  }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+
+  /* Finding cards */
+  .finding-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid var(--gray-200);
+    border-left: 4px solid var(--primary);
+  }
+  .finding-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; color: var(--primary-dark); }
+  .finding-card p { font-size: 14px; color: var(--gray-700); }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+  }
+  .badge-tier1 { background: var(--success-light); color: #15803d; }
+  .badge-tier2 { background: var(--accent-light); color: #b45309; }
+  .badge-tier3 { background: var(--primary-light); color: var(--primary-dark); }
+  .badge-tier4 { background: var(--gray-100); color: var(--gray-700); }
+  .badge-lang-zh { background: var(--primary-light); color: var(--primary-dark); }
+  .badge-lang-en { background: #e0e7ff; color: #4338ca; }
+  .badge-lang-both { background: #fce7f3; color: #be185d; }
+  .badge-free { background: var(--success-light); color: #15803d; }
+  .badge-paid { background: var(--danger-light); color: #b91c1c; }
+  .badge-apply { background: var(--accent-light); color: #b45309; }
+  .badge-verified { background: var(--primary-light); color: var(--primary-dark); }
+  .badge-claimed { background: var(--gray-100); color: var(--gray-500); }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--gray-200); background: white; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead { background: var(--gray-50); }
+  th {
+    padding: 12px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--gray-700);
+    border-bottom: 2px solid var(--gray-200);
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  td {
+    padding: 10px;
+    border-bottom: 1px solid var(--gray-100);
+    vertical-align: top;
+    color: var(--gray-700);
+  }
+  tr:hover td { background: var(--gray-50); }
+  tr:last-child td { border-bottom: none; }
+  .ds-name { font-weight: 600; color: var(--gray-900); }
+  .ds-name a { color: var(--primary-dark); text-decoration: none; }
+  .ds-name a:hover { text-decoration: underline; }
+
+  /* Dataset detail card */
+  .ds-card {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    border: 1px solid var(--gray-200);
+    margin-bottom: 12px;
+  }
+  .ds-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ds-card-title { font-size: 16px; font-weight: 700; color: var(--gray-900); }
+  .ds-card-title a { color: var(--primary-dark); text-decoration: none; }
+  .ds-card-title a:hover { text-decoration: underline; }
+  .ds-card-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ds-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 20px; margin-bottom: 10px; }
+  .ds-field { font-size: 13px; }
+  .ds-field-label { color: var(--gray-500); font-weight: 500; }
+  .ds-field-value { color: var(--gray-900); }
+  .ds-note {
+    font-size: 13px;
+    color: var(--gray-700);
+    background: var(--gray-50);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border-left: 3px solid var(--primary);
+  }
+  .ds-note.warning { border-left-color: var(--accent); background: var(--accent-light); }
+  .ds-note.danger { border-left-color: var(--danger); background: var(--danger-light); }
+
+  /* Recommendation box */
+  .rec-box {
+    background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+    border: 1px solid #99f6e4;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .rec-box h3 { color: var(--primary-dark); font-size: 16px; margin-bottom: 12px; }
+  .rec-box ol { padding-left: 20px; }
+  .rec-box li { margin-bottom: 8px; font-size: 14px; color: var(--gray-700); }
+  .rec-box li strong { color: var(--gray-900); }
+
+  /* Tier summary */
+  .tier-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tier-box {
+    background: white;
+    border-radius: 10px;
+    padding: 16px;
+    border: 1px solid var(--gray-200);
+  }
+  .tier-box h4 { font-size: 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .tier-box p { font-size: 13px; color: var(--gray-500); }
+  .tier-box .count { font-size: 24px; font-weight: 700; color: var(--primary); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 24px;
+    color: var(--gray-500);
+    font-size: 12px;
+    border-top: 1px solid var(--gray-200);
+    margin-top: 40px;
+  }
+
+  /* TOC */
+  .toc {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    border: 1px solid var(--gray-200);
+    margin-bottom: 32px;
+  }
+  .toc h3 { font-size: 15px; margin-bottom: 10px; color: var(--gray-700); }
+  .toc ol { padding-left: 20px; columns: 2; column-gap: 32px; }
+  .toc li { margin-bottom: 4px; font-size: 14px; }
+  .toc a { color: var(--primary-dark); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  @media (max-width: 768px) {
+    .container { padding: 16px 12px; }
+    .header { padding: 28px 20px; }
+    .header h1 { font-size: 22px; }
+    .toc ol { columns: 1; }
+    .ds-fields { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>📊 开源校园心理相关数据集调研报告</h1>
+    <div class="subtitle">面向大语言模型微调场景的数据集质量评估与选型指南</div>
+    <div class="meta">
+      <span>📅 调研日期：2026-08-31</span>
+      <span>🔍 覆盖平台：GitHub / HuggingFace / ModelScope / Kaggle / Zenodo / Figshare / 学术论文 / 国内机构</span>
+      <span>📦 收录数据集：40+</span>
+    </div>
+  </div>
+
+  <!-- TOC -->
+  <div class="toc">
+    <h3>📑 目录</h3>
+    <ol>
+      <li><a href="#findings">核心发现</a></li>
+      <li><a href="#tiers">梯队总览</a></li>
+      <li><a href="#table">全量对比表</a></li>
+      <li><a href="#tier1">第一梯队：可直接免费下载的中文对话数据</a></li>
+      <li><a href="#tier2">第二梯队：需申请/付费的中文数据</a></li>
+      <li><a href="#tier3">第三梯队：危机文本与多任务指令数据</a></li>
+      <li><a href="#tier4">第四梯队：结构化调查/量表数据</a></li>
+      <li><a href="#english">英文数据集（需翻译适配）</a></li>
+      <li><a href="#recommend">微调选型建议</a></li>
+      <li><a href="#caveats">注意事项与伦理提醒</a></li>
+    </ol>
+  </div>
+
+  <!-- 核心发现 -->
+  <div class="section" id="findings">
+    <h2 class="section-title">一、核心发现</h2>
+    <div class="card-grid">
+      <div class="finding-card">
+        <h3>🎯 专门"校园心理"数据集极少</h3>
+        <p>以"校园心理/学生心理健康"命名的独立开源数据集极为稀少。目前唯一明确面向大学校园场景的大规模对话数据集是 <strong>CPCD (Psy-Chronicle)</strong>（9万对话/1145万字）。主流数据集多为通用中文心理咨询语料，但大量样本天然覆盖考试、科研、宿舍、失恋、就业等学生高频场景，可按关键词筛选子集。</p>
+      </div>
+      <div class="finding-card">
+        <h3>📈 可直接免费下载的中文对话数据充足</h3>
+        <p>至少 <strong>12 个</strong>中文心理咨询对话/问答数据集可在 GitHub 或 ModelScope 直接免费下载，总规模超过 <strong>300 万条</strong>对话/问答。其中 EmoLLM 数据集集合采用 MIT 许可可商用，SoulChatCorpus 规模最大（151万轮），CPCD 校园相关性最高。</p>
+      </div>
+      <div class="finding-card">
+        <h3>⚠️ 多数多轮对话由 LLM 合成</h3>
+        <p>中文心理对话数据集中，多轮部分大多由 GPT-4/ChatGPT 合成生成（SoulChat、SMILECHAT、CPCD、PsyDTCorpus 等），<strong>真实咨询记录极少</strong>。相对真实的包括：CPsyCounD（基于真实咨询报告重构）、MDD-5k（基于真实病历合成）、efaqa-corpus-raw（网络爬取真实用户倾诉）。</p>
+      </div>
+      <div class="finding-card">
+        <h3>🔒 许可与获取方式差异大</h3>
+        <p>仅 <strong>EmoLLM 数据集集合</strong>明确采用 MIT 许可可商用。多数数据集未声明许可或仅限研究用途。EFAQA 系列需购买证书，PsyQA/STAMPsy/D4 需签署协议申请，AuraDial 需非商业协议。商用前务必逐一核实许可条款。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 梯队总览 -->
+  <div class="section" id="tiers">
+    <h2 class="section-title">二、梯队总览</h2>
+    <div class="tier-summary">
+      <div class="tier-box">
+        <h4><span class="badge badge-tier1">第一梯队</span></h4>
+        <div class="count">12</div>
+        <p>可直接免费下载的中文对话/问答数据集，最适合直接用于微调</p>
+      </div>
+      <div class="tier-box">
+        <h4><span class="badge badge-tier2">第二梯队</span></h4>
+        <div class="count">8</div>
+        <p>需申请/付费/许可受限的中文数据集，质量高但获取有门槛</p>
+      </div>
+      <div class="tier-box">
+        <h4><span class="badge badge-tier3">第三梯队</span></h4>
+        <div class="count">3</div>
+        <p>危机文本分类与多任务指令数据，适合作为辅助能力训练</p>
+      </div>
+      <div class="tier-box">
+        <h4><span class="badge badge-tier4">第四梯队</span></h4>
+        <div class="count">5+</div>
+        <p>结构化调查/量表数据，不能直接用于对话生成，需额外处理</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 全量对比表 -->
+  <div class="section" id="table">
+    <h2 class="section-title">三、全量对比表</h2>
+    <p class="section-desc">按微调适配度排序。点击数据集名称可跳转至来源链接。标注"一方称"表示仅从单一来源获取信息，未交叉验证到独立可访问的下载地址。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>数据集</th>
+            <th>梯队</th>
+            <th>内容类型</th>
+            <th>规模</th>
+            <th>语言</th>
+            <th>获取方式</th>
+            <th>校园相关性</th>
+            <th>微调适配度</th>
+            <th>查证</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/SmartFlowAI/EmoLLM" target="_blank">EmoLLM 数据集集合</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>QA+多轮对话+CoT推理（16个子集）</td>
+            <td>总计&gt;170万条</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中（含学生场景）</td>
+            <td>⭐⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/scutcyr/SoulChat" target="_blank">SoulChatCorpus</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>多轮共情对话+单轮指令</td>
+            <td>258,354对话/1,517,344轮</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中（含考试/科研/宿舍场景）</td>
+            <td>⭐⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/EdwinUSTB/Psy-Chronicle" target="_blank">CPCD (Psy-Chronicle)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td><strong>校园长程</strong>多轮咨询对话</td>
+            <td>100档案/90,000对话/1145万字</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td><strong>高（唯一校园专属）</strong></td>
+            <td>⭐⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/qiuhuachuan/smile" target="_blank">SMILECHAT (MeChat)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>多轮心理健康支持对话</td>
+            <td>55,165对话/310,087训练样本</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中（含高考焦虑等）</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/slptongji/PsyChatbot" target="_blank">cPsychQASet (PsyChatbot)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>CBT心理咨询问答三元组</td>
+            <td>~89,000条</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中（面向抑郁人群）</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/CAS-SIAT-XinHai/CPsyCoun" target="_blank">CPsyCounD</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>真实咨询报告重构多轮对话+评估</td>
+            <td>3,134对话+500评估</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/qiuhuachuan/PsyDial" target="_blank">PsyDial</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>长程心理咨询对话（隐私保护重构）</td>
+            <td>平均37.8轮/对话（多分割）</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/scutcyr/SoulChat2.0" target="_blank">PsyDTCorpus (SoulChat2.0)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>咨询师数字孪生多轮对话（OpenAI格式）</td>
+            <td>5,000对话/90,365轮</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/scutcyr/SoulChat-R1" target="_blank">SoulChat-R1 (CATCH)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>结构化对话+显式思维链(CoT)</td>
+            <td>未公开具体数</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/ckqqqq/Psy-Insight" target="_blank">Psy-Insight</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>多轮对话+逐步推理标注+多任务标签</td>
+            <td>中文431会话/5,776轮；英文6,208轮</td>
+            <td><span class="badge badge-lang-both">中英双语</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/lemonsis/mdd-5k" target="_blank">MDD-5k</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>精神障碍诊断对话（含诊断+治疗建议）</td>
+            <td>4,630-5,000条对话</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中低（临床场景）</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/zwzzzQAQ/MentalGLM" target="_blank">C-IMHI (MentalGLM)</a></td>
+            <td><span class="badge badge-tier1">T1</span></td>
+            <td>多任务心理健康指令（含可解释标注）</td>
+            <td>~9,000条指令</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费直接下载</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/chatopera/efaqa-corpus-zh" target="_blank">EFAQA (efaqa-corpus-zh)</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>人工标注多轮咨询对话+三级分类标签</td>
+            <td>20,000条</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-paid">需购买证书</span></td>
+            <td>中（含学业烦恼分类）</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/chatopera/efaqa-corpus-raw" target="_blank">efaqa-corpus-raw</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>未标注原始多轮咨询对话（网络爬取）</td>
+            <td>172,316话题/2,381,273消息/4451万字</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-paid">需购买证书</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/thu-coai/PsyQA" target="_blank">PsyQA</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>心理健康长文本问答+援助策略标注</td>
+            <td>~22,000问题/56,000回答</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">需签协议申请</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/JOY-SWang/STAMPsy" target="_blank">STAMPsy</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>混合类型对话+时空标注+helping skills</td>
+            <td>完整规模未公开（仅样例）</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">需签协议申请</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/X-LANCE/D4" target="_blank">D4</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>抑郁症问诊多轮对话（ICD-11/DSM-5）</td>
+            <td>1,339段对话/平均21.6轮</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">需申请访问</span></td>
+            <td>中低（临床诊断）</td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://aclanthology.org/2025.emnlp-main.646/" target="_blank">DeepWell-Adol</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td><strong>青少年</strong>积极心理健康多轮对话</td>
+            <td>1,795条对话（平均年龄13.5岁）</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">数据链接待确认</span></td>
+            <td><strong>高（青少年/中学）</strong></td>
+            <td>⭐⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://arxiv.org/abs/2507.07509" target="_blank">CPsDD</a></td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>多轮心理支持对话（16种问题分类）</td>
+            <td>68,136条对话/约130万轮</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">下载链接待确认</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-claimed">一方称</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name">AuraDial</td>
+            <td><span class="badge badge-tier2">T2</span></td>
+            <td>单轮+多轮咨询对话（真实用户指令+改写）</td>
+            <td>30万+单轮/9万+多轮</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">需签非商业协议</span></td>
+            <td>中</td>
+            <td>⭐⭐⭐⭐</td>
+            <td><span class="badge badge-claimed">一方称</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/zwzzzQAQ/MentalGLM" target="_blank">SOS-HL-1K</a></td>
+            <td><span class="badge badge-tier3">T3</span></td>
+            <td>微博自杀风险文本二分类（"走饭"树洞）</td>
+            <td>1,249条微博</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费（含于MentalGLM）</span></td>
+            <td>高（危机干预）</td>
+            <td>⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://github.com/zwzzzQAQ/MentalGLM" target="_blank">SocialCD-3K</a></td>
+            <td><span class="badge badge-tier3">T3</span></td>
+            <td>微博认知扭曲文本多标签分类（12种）</td>
+            <td>3,407条微博</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费（含于MentalGLM）</span></td>
+            <td>高（CBT取向）</td>
+            <td>⭐⭐</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://figshare.com/articles/dataset/data_for_research_b_reverse-coded_b_xlsx/28831154" target="_blank">Chinese Undergraduates Survey</a></td>
+            <td><span class="badge badge-tier4">T4</span></td>
+            <td>中国大学生心理量表（SCL-90/BSCS/PSSS等）</td>
+            <td>1,159名学生</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-free">免费下载</span></td>
+            <td>高（中国大学生）</td>
+            <td>⭐（非文本）</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://mhdata.psych.ac.cn/" target="_blank">国民心理健康数据库</a></td>
+            <td><span class="badge badge-tier4">T4</span></td>
+            <td>全国心理健康调查/量表数据（含青少年）</td>
+            <td>数万级（未公开精确数）</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">需机构申请</span></td>
+            <td>高（含学生群体）</td>
+            <td>⭐（非文本）</td>
+            <td><span class="badge badge-verified">已查证</span></td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://www.dlab.org.cn/data-set" target="_blank">灵溪抑郁焦虑语音问诊</a></td>
+            <td><span class="badge badge-tier4">T4</span></td>
+            <td>临床患者问诊语音+文本（匹配完整病历）</td>
+            <td>4,500例</td>
+            <td><span class="badge badge-lang-zh">中文</span></td>
+            <td><span class="badge badge-apply">可能需申请/合作</span></td>
+            <td>中低（临床诊疗）</td>
+            <td>⭐⭐（文本部分可用）</td>
+            <td><span class="badge badge-claimed">一方称</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 第一梯队详情 -->
+  <div class="section" id="tier1">
+    <h2 class="section-title">四、第一梯队：可直接免费下载的中文对话数据</h2>
+    <p class="section-desc">以下数据集可在 GitHub / ModelScope / HuggingFace 直接免费获取，已具备或可轻松转换为微调格式，是最优先考虑的候选。</p>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">1. EmoLLM 数据集集合 <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— MIT许可，唯一可商用</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/SmartFlowAI/EmoLLM" target="_blank" style="color:var(--primary-dark)">GitHub</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">16个子集，总计&gt;170万条</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value"><strong>MIT（可商用）</strong></span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">QA / 多轮对话 / CoT推理</span></div>
+      </div>
+      <div class="ds-note">整合了 SMILE、CPsyCounD、SoulChat 等多个知名数据集，含 R1 蒸馏推理数据（psychology-10k-Deepseek-R1-zh）。配套 xtuner/LLaMA-Factory 微调配置。部分子数据集为角色扮演数据（如"舔狗""老母亲"），专业性参差不齐，需自行筛选高质量部分。<strong>在所有调研数据集中许可最宽松，是商用场景的首选。</strong></div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">2. SoulChatCorpus <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 规模最大的中文共情对话语料</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/scutcyr/SoulChat" target="_blank" style="color:var(--primary-dark)">GitHub</a> / <a href="https://www.modelscope.cn/datasets/YIRONGCHEN/SoulChatCorpus" target="_blank" style="color:var(--primary-dark)">ModelScope</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">258,354对话 / 1,517,344轮</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">代码Apache 2.0；数据集随项目分发</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">已统一为"用户：xxx\n心理咨询师：xxx"指令格式</span></div>
+      </div>
+      <div class="ds-note">单轮数据&gt;15万条（回答&gt;50万条），多轮数据约100万轮，混合后&gt;120万样本（过滤约9万条风险数据）。覆盖<strong>期末考试、科研压力、宿舍关系、失恋</strong>等学生高频场景。多轮数据由 GPT-4 合成，存在模式单一风险。EMNLP 论文验证质量。模型权重基于 ChatGLM-6B 仅限非商业研究。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">3. CPCD (Psy-Chronicle) <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 唯一面向大学校园的长程咨询数据集 ⭐</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/EdwinUSTB/Psy-Chronicle" target="_blank" style="color:var(--primary-dark)">GitHub</a> / <a href="https://arxiv.org/abs/2605.22140" target="_blank" style="color:var(--primary-dark)">arXiv</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">100学生档案 / 90,000对话 / 约1,145万中文字符</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">论文标注"open-source"</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">学期级长程多轮对话，含学生档案+校园压力事件+跨会话记忆更新</span></div>
+      </div>
+      <div class="ds-note warning"><strong>本调研中唯一明确面向大学校园场景的大规模对话数据集。</strong>建模学期级长程咨询过程，含学生背景信息和事件触发机制，非常适合校园心理大模型微调。另含 CPCD-Bench 评估基准。数据为合成生成（基于结构化 pipeline），非真实咨询记录；长程对话对模型上下文窗口要求较高；2026年新发布，社区验证尚少。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">4. SMILECHAT (MeChat)</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/qiuhuachuan/smile" target="_blank" style="color:var(--primary-dark)">GitHub</a> / EMNLP 2024 Findings</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">55,165条多轮对话；转换后310,087训练样本</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">已提供 instruction 格式转换脚本，含完整 system prompt</span></div>
+      </div>
+      <div class="ds-note">将 PsyQA 单轮数据通过 ChatGPT 扩展为多轮对话（99% GPT-3.5, 1% GPT-4），解决了 PsyQA 缺乏多轮结构的问题。基于真实心理互助 QA 扩展，话题覆盖<strong>高考焦虑、睡眠、情感</strong>等学生场景。平均对话长度约11.4轮，回复偏长（平均85.8字）。含真实测试集 PsyTest。专家评估质量优于基线。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">5. cPsychQASet (PsyChatbot)</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/slptongji/PsyChatbot" target="_blank" style="color:var(--primary-dark)">GitHub</a> / ACM TALLIP</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">约89,000条心理咨询问答三元组</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">论文称数据已发布（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">问题-答案-类别 三元组，基于认知行为疗法(CBT)</span></div>
+      </div>
+      <div class="ds-note">数据来自三个专业心理咨询论坛（xinli001等），为<strong>真实用户提问和回复</strong>。基于 CBT 理论框架，面向抑郁人群，适合 CBT 取向的心理问答微调。规模较大（89K）。问答三元组格式简单，缺乏多轮上下文，适合作为单轮 QA 训练数据或与多轮数据集混合使用。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">6. CPsyCounD <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 基于真实咨询报告重构，质量最高</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/CAS-SIAT-XinHai/CPsyCoun" target="_blank" style="color:var(--primary-dark)">GitHub</a> / ACL Findings 2024</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">3,134份真实报告 → 3,134条对话 + 500条评估</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-label"></span><span class="ds-field-value">多轮对话 + 5种咨询意图 + 9种情绪标签</span></div>
+      </div>
+      <div class="ds-note">中科院深圳先进院 XinHai 团队出品。基于<strong>3,134份真实心理咨询报告</strong>（来自壹点灵等平台）通过 Memo2Demo 方法重构为对话，质量高于纯 LLM 生成数据。含评估基准 CPsyCounE（500条）。规模较小（3.1K），通常作为<strong>高质量种子数据或评估集</strong>使用。对话由 LLM 从报告重构，非原始咨询录音转写。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">7. PsyDial <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 首个完全开源的中文长程心理咨询对话</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/qiuhuachuan/PsyDial" target="_blank" style="color:var(--primary-dark)">GitHub</a> / ACL 2025 Main</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">平均每个对话37.8轮（远超同类）；分D0-D4多分割+D101测试集</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（HuggingFace公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">长程多轮对话，D101为专业书籍人工对话测试集</span></div>
+      </div>
+      <div class="ds-note">对话轮次长（平均37.8轮），更接近真实长程咨询。采用 RMRR（检索-掩码-重构-精炼）方法专门做了<strong>隐私保护重构</strong>，是伦理上最稳妥的选择。D101 测试集为101个专业咨询书籍人工收集对话，质量高。半真实数据（LLM重构），非原始真实咨询。HuggingFace 多分割免费下载。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">8. PsyDTCorpus (SoulChat2.0)</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/scutcyr/SoulChat2.0" target="_blank" style="color:var(--primary-dark)">GitHub</a> / ACL 2025 Main</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">5,000对话 / 90,365轮（平均18轮/对话）</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未单独声明（模型需遵循基座协议）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">OpenAI messages格式，含system prompt指定咨询师流派（如REBT）</span></div>
+      </div>
+      <div class="ds-note">心理咨询师数字孪生对话数据集，含特定咨询师语言风格与疗法技术。可直接用 LLaMA-Factory 微调。人工评估在谈话技术、关系建立、疗法技术等维度优于 SoulChat/SMILE/CPsyCoun。数据由 GPT-4 基于12个真实案例合成。规模相对较小（5K对话），模型仅用于科研。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">9. SoulChat-R1 (CATCH) <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 唯一含显式思维链的中文心理咨询数据</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/scutcyr/SoulChat-R1" target="_blank" style="color:var(--primary-dark)">GitHub</a> / EMNLP 2025 Findings</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">未在README中给出具体对话数</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">Apache 2.0</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">结构化对话（SST三阶段标注）+ 显式MDP CoT（&lt;think&gt;标签）</span></div>
+      </div>
+      <div class="ds-note">当前少有的<strong>含显式思维链</strong>的中文心理咨询数据集，CoT 包含记忆增强→全局规划→策略推理三步，适合训练 R1 类推理模型。严格遵循单次单元咨询疗法（SST）流程，治疗保真度高。数据为多智能体合成。具体规模未公开，SST 疗法覆盖范围有限（单次咨询）。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">10. Psy-Insight</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-both">中英双语</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/ckqqqq/Psy-Insight" target="_blank" style="color:var(--primary-dark)">GitHub</a> / arXiv 2025</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">中文431会话/5,776轮；英文520主题/6,208轮</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">多轮对话 + 逐步推理标注 + 多任务标签（情绪/策略）</span></div>
+      </div>
+      <div class="ds-note">少有的中英双语心理咨询数据集。含逐步推理（step-by-step reasoning）标注，适合训练具有可解释性的心理咨询模型和思维链能力。多任务标签支持情绪识别和策略分类。中文部分规模较小（431会话），作为微调主数据偏小，适合作为<strong>高质量补充或推理能力训练数据</strong>。中英对照可用于翻译增强。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">11. MDD-5k</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/lemonsis/mdd-5k" target="_blank" style="color:var(--primary-dark)">GitHub</a> / AAAI 2025</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">4,630-5,000条诊断对话（基于926-1000份真实匿名病历）</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">医生-患者多轮对话 + 诊断结果 + 治疗建议标签</span></div>
+      </div>
+      <div class="ds-note">与上海市精神卫生中心合作，基于<strong>真实匿名病历</strong>通过神经符号多智能体合成。含诊断标签和治疗建议，适合训练具有诊断推理能力的心理大模型。临床真实性高于纯生成数据。但为精神科临床诊断场景（非一般心理咨询），约90%患者年龄20-40岁，与校园场景有差异。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">12. C-IMHI (MentalGLM)</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/zwzzzQAQ/MentalGLM" target="_blank" style="color:var(--primary-dark)">GitHub</a> / EMNLP 2025 Main</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">约9,000条指令样本（含质量控制和人工验证）</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">未明确声明（GitHub公开）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">多任务指令（自杀风险检测/认知扭曲检测/认知路径提取）+ 可解释决策说明</span></div>
+      </div>
+      <div class="ds-note">指令格式直接适配大模型微调，含可解释性标注（决策理由），适合训练能给出分析依据的心理健康分析模型。基于 SOS-HL-1K、SocialCD-3K 等数据构建。覆盖社交媒体文本而非咨询对话，主要用于分析/检测而非生成回复，9K规模中等。可作为校园心理模型的<strong>危机检测辅助能力</strong>训练数据。</div>
+    </div>
+  </div>
+
+  <!-- 第二梯队详情 -->
+  <div class="section" id="tier2">
+    <h2 class="section-title">五、第二梯队：需申请/付费/许可受限的中文数据</h2>
+    <p class="section-desc">这些数据集质量较高但获取有门槛，建议在第一梯队数据不足或需要特定方向补充时考虑。</p>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">1. efaqa-corpus-raw <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 迄今公开最大的中文心理咨询原始语料</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-paid">需付费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/chatopera/efaqa-corpus-raw" target="_blank" style="color:var(--primary-dark)">GitHub</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">172,316话题 / 2,381,273消息 / 4451万字</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">春松许可证v1.0，仅限研究用途，需购买证书</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">未标注原始多轮对话（爬取自壹心理、简心理、豆瓣等）</span></div>
+      </div>
+      <div class="ds-note warning">规模极大，非常适合<strong>无监督预训练或继续预训练</strong>。包含真实用户倾诉与网友回复，话题覆盖学业、情感、家庭、职场、抑郁焦虑等。需付费购买证书，非免费；未标注，需自行清洗和构造 instruction 格式；数据来自网络爬取，质量参差不齐；许可禁止商用和二次分发；部分来源网站已关闭，有合规风险。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">2. PsyQA <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 中文心理咨询领域奠基性数据集</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">需申请</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/thu-coai/PsyQA" target="_blank" style="color:var(--primary-dark)">GitHub</a> / ACL Findings 2021</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">约22,000问题 / 56,000回答</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">自定义用户协议（需签署PDF邮件申请）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">单轮长文本问答 + 援助策略标注</span></div>
+      </div>
+      <div class="ds-note">清华大学 CoAI 实验室出品，从"壹心理"平台爬取。提供<strong>援助策略标注</strong>（信息提供、情绪支持、建议等），可用于生成富有策略的长咨询文本。被后续 SMILE、SoulChat 等大量工作扩展使用。GitHub 仅提供样例，完整数据需签署协议人工申请，获取流程较长，存在再分发限制。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">3. EFAQA (efaqa-corpus-zh) <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 首个开放的中文心理咨询QA语料库</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-paid">需付费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/chatopera/efaqa-corpus-zh" target="_blank" style="color:var(--primary-dark)">GitHub</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">20,000条人工标注多轮对话</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">春松许可证v1.0，仅限研究用途，需购买证书</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">多轮对话 + 三级分类标签（S1烦恼类型/S2心理疾病/S3 SOS危机级别）</span></div>
+      </div>
+      <div class="ds-note">由斯坦福大学、UCLA、台湾辅仁大学临床心理学专业人士与 Chatopera 合作标注，平均每条标记耗时&gt;1分钟。标注质量高。S3 含<strong>自杀行为/自杀意念/自残标注</strong>，可用于危机识别。聊天级标签含追问/知识/负面回复标注。2万条规模在当前大模型微调中偏小，通常需与其他数据集合并使用。需付费购买证书，禁止商用。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">4. CPsDD</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">链接待确认</span>
+          <span class="badge badge-claimed">一方称</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://arxiv.org/abs/2507.07509" target="_blank" style="color:var(--primary-dark)">arXiv 2025</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">68,136条对话 / 约130万轮话语</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">论文称构建并公开，具体下载地址未确认</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">多轮心理支持对话（13人群/16问题/13原因/12支持焦点）</span></div>
+      </div>
+      <div class="ds-note warning">规模大（68K），人群和问题分类细致，平均对话长度19.4轮。数据通过多智能体系统（CADSS）生成并经人工审核，混合真实与合成。<strong>具体开源地址未在公开搜索中确认，建议直接联系论文作者获取。</strong></div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">5. DeepWell-Adol <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— 唯一以青少年为对象的对话数据集</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">链接待确认</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://aclanthology.org/2025.emnlp-main.646/" target="_blank" style="color:var(--primary-dark)">EMNLP 2025 Main</a></span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">1,795条对话（青少年平均年龄13.51岁）</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">EMNLP论文通常随论文公开，具体链接待确认</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">青少年积极心理健康与成长促进多轮对话（积极心理学+教练技术）</span></div>
+      </div>
+      <div class="ds-note warning"><strong>本调研中唯一明确以青少年（平均13.5岁）为对象的对话数据集。</strong>聚焦学业、同伴、身份认同等发展性议题，以预防和成长为导向而非临床治疗，非常适合中学校园和大学低年级场景。规模较小（1,795条），且为积极心理学取向，不覆盖危机干预和严重心理问题。数据获取链接待确认，建议关注论文补充材料。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">6. STAMPsy <span style="font-size:13px;color:var(--gray-500);font-weight:400;">— AAAI 2025 Oral，标注维度最独特</span></div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">需申请</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/JOY-SWang/STAMPsy" target="_blank" style="color:var(--primary-dark)">GitHub</a> / AAAI 2025 Oral</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">完整规模未公开（GitHub仅样例）</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">自定义用户协议（签署PDF邮件申请）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">混合类型多轮对话 + 时空信息标记 + helping skills标注 + 迭代自我反馈</span></div>
+      </div>
+      <div class="ds-note">AAAI 2025 Oral Presentation（口头报告，录用率极低），学术质量高。独特的<strong>时空信息标注</strong>和 helping skills 标注（探索、领悟、行动等阶段），可用于训练具备阶段感知能力的咨询模型。Self-STAMPsy 可明确目标、感知世界、自我优化。完整数据需申请审核，不直接公开，具体规模未知，标注维度复杂，使用门槛较高。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">7. D4 — 中文抑郁症问诊对话数据集</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">需申请</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/X-LANCE/D4" target="_blank" style="color:var(--primary-dark)">GitHub</a> / EMNLP 2022</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">1,339段对话 / 平均21.6轮</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">需申请访问（项目网站提供申请入口）</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">医生-患者多轮对话 + 诊断结果 + 症状摘要（ICD-11/DSM-5）</span></div>
+      </div>
+      <div class="ds-note">上海交大 X-LANCE 实验室出品，基于 ICD-11 和 DSM-5 标准构建。模拟医生与患者多轮对话，含专业精神科医生给出的诊断结果和症状摘要，抑郁程度分无/轻/中/重四类。临床专业度高，适用于抑郁筛查、问诊策略和症状摘要生成微调。但为临床诊断场景，与校园心理咨询（非诊断、支持性）有差异；样本量较小；可能有访问限制。</div>
+    </div>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">8. AuraDial</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-apply">非商业协议</span>
+          <span class="badge badge-claimed">一方称</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value">EMNLP Findings 2025</span></div>
+        <div class="ds-field"><span class="ds-field-label">规模：</span><span class="ds-field-value">30万+单轮 / 9万+多轮</span></div>
+        <div class="ds-field"><span class="ds-field-label">许可：</span><span class="ds-field-value">非商业许可 + 数据使用协议</span></div>
+        <div class="ds-field"><span class="ds-field-label">格式：</span><span class="ds-field-value">单轮+多轮咨询对话（真实用户指令+改写生成回复）</span></div>
+      </div>
+      <div class="ds-note warning">规模最大之一，基于真实用户指令+改写生成回复，真实性优于纯合成数据。需签署非商业使用协议。具体数据下载方式和完整信息未在公开搜索中完全确认，标注为"一方称"。建议关注论文发表后的官方发布渠道。</div>
+    </div>
+  </div>
+
+  <!-- 第三梯队 -->
+  <div class="section" id="tier3">
+    <h2 class="section-title">六、第三梯队：危机文本与多任务指令数据</h2>
+    <p class="section-desc">这些数据集规模较小，主要用于分类/检测任务，可作为校园心理模型的危机识别辅助能力训练数据。均来自微博"走饭"树洞（2012年自杀大学生"走饭"最后一条微博的评论区，是抑郁症患者和自杀困扰者的表达空间）。</p>
+
+    <div class="ds-card">
+      <div class="ds-card-header">
+        <div class="ds-card-title">SOS-HL-1K + SocialCD-3K + C-IMHI（MentalGLM 项目）</div>
+        <div class="ds-card-badges">
+          <span class="badge badge-lang-zh">中文</span>
+          <span class="badge badge-free">免费</span>
+          <span class="badge badge-verified">已查证</span>
+        </div>
+      </div>
+      <div class="ds-fields">
+        <div class="ds-field"><span class="ds-field-label">来源：</span><span class="ds-field-value"><a href="https://github.com/zwzzzQAQ/MentalGLM" target="_blank" style="color:var(--primary-dark)">MentalGLM GitHub</a> / EMNLP 2025 Main</span></div>
+        <div class="ds-field"><span class="ds-field-label">SOS-HL-1K：</span><span class="ds-field-value">1,249条微博，自杀风险二分类（高风险601/低风险645）</span></div>
+        <div class="ds-field"><span class="ds-field-label">SocialCD-3K：</span><span class="ds-field-value">3,407条微博，12种认知扭曲多标签分类</span></div>
+        <div class="ds-field"><span class="ds-field-label">C-IMHI：</span><span class="ds-field-value">~9,000条多任务指令，含可解释决策说明</span></div>
+      </div>
+      <div class="ds-note danger">数据来自"走饭"树洞，真实度高，适合危机文本识别和风险分级。SOS-HL-1K 可训练自杀风险检测能力，SocialCD-3K 可训练 CBT 取向的认知识别能力（非黑即白、灾难化、过度概括等12种认知扭曲），C-IMHI 为指令格式可直接微调。规模小，仅适合分类任务或作为危机检测模块的训练数据。涉及自杀等高敏感内容，使用需伦理审查。</div>
+    </div>
+  </div>
+
+  <!-- 第四梯队 -->
+  <div class="section" id="tier4">
+    <h2 class="section-title">七、第四梯队：结构化调查/量表数据</h2>
+    <p class="section-desc">这些数据集为结构化量表/调查数据，不能直接用于对话生成微调，但可用于心理健康风险因素分析、量表-文本对齐数据构建、或作为知识增强来源。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>数据集</th><th>来源</th><th>内容</th><th>规模</th><th>获取方式</th><th>微调用途</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ds-name"><a href="https://figshare.com/articles/dataset/data_for_research_b_reverse-coded_b_xlsx/28831154" target="_blank">Chinese Undergraduates Survey</a></td>
+            <td>Figshare / 广州某大学</td>
+            <td>中国大学生心理量表（SCL-90/BSCS/PSSS/DOSPERT/Family APGAR）</td>
+            <td>1,159名学生（平均18.2岁）</td>
+            <td><span class="badge badge-free">免费下载</span></td>
+            <td>校园心理风险识别模型训练/验证；量表-文本对齐</td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://mhdata.psych.ac.cn/" target="_blank">国民心理健康数据库</a></td>
+            <td>中科院心理所 / 2007-至今</td>
+            <td>全国心理健康调查/量表数据（含青少年群体）</td>
+            <td>数万级（未公开精确数）</td>
+            <td><span class="badge badge-apply">需机构申请</span></td>
+            <td>心理健康知识增强；量表-文本对齐；代表性统计参考</td>
+          </tr>
+          <tr>
+            <td class="ds-name">乡村儿童心理健康数据集</td>
+            <td>中科院心理所 / 2021</td>
+            <td>乡村儿童（含留守）心理健康调查+影响因素</td>
+            <td>未查到具体数</td>
+            <td><span class="badge badge-apply">联系作者</span></td>
+            <td>特定高危群体风险因素分析；知识增强</td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://www.dlab.org.cn/data-set" target="_blank">灵溪抑郁焦虑语音问诊</a></td>
+            <td>天桥脑科学研究院</td>
+            <td>临床患者问诊语音+文本（匹配完整病历）</td>
+            <td>4,500例</td>
+            <td><span class="badge badge-apply">可能需申请</span></td>
+            <td>文本部分可用于微调；多模态可开发诊断和共情模型</td>
+          </tr>
+          <tr>
+            <td class="ds-name">中国大学生生活方式及身心健康数据集</td>
+            <td>中科院心理所数据中心 / 2024</td>
+            <td>大学生生活方式+身心健康调查</td>
+            <td>未查到具体数</td>
+            <td><span class="badge badge-apply">限制性获取</span></td>
+            <td>校园健康风险因素分析；有样例数据集可参考</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 英文数据集 -->
+  <div class="section" id="english">
+    <h2 class="section-title">八、英文数据集（需翻译适配）</h2>
+    <p class="section-desc">以下英文数据集在心理健康 NLP 领域有较高影响力，可通过翻译/文化适配后作为补充训练数据。翻译成本：结构化调查低，社交媒体高（俚语/缩写），心理咨询对话中等（需保留专业术语和共情语气）。</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>数据集</th><th>来源</th><th>内容类型</th><th>规模</th><th>许可</th><th>迁移价值</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="ds-name"><a href="https://huggingface.co/datasets/thu-coai/esconv" target="_blank">ESConv</a></td>
+            <td>ACL 2021 / 清华CoAI</td>
+            <td>情感支持多轮对话（8种支持策略标注，含学业压力场景）</td>
+            <td>1,053对话/31,410话语</td>
+            <td>未明确（HF公开）</td>
+            <td><strong>高</strong> — 策略标注最系统，含学业场景，翻译后可补充支持策略学习</td>
+          </tr>
+          <tr>
+            <td class="ds-name">CounselChat</td>
+            <td>在线咨询平台 / Bertagnolli 2020</td>
+            <td>心理咨询问答（患者提问+专业咨询师回复，30+话题分类）</td>
+            <td>~3,600问答对</td>
+            <td>未明确</td>
+            <td>中高 — 专业咨询师回复质量高，翻译后可补充咨询话术和策略</td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://huggingface.co/datasets/ShenLab/MentalChat16K" target="_blank">MentalChat16K</a></td>
+            <td>arXiv 2025</td>
+            <td>心理健康咨询对话（合成+真实行为健康教练访谈）</td>
+            <td>16,000问答对</td>
+            <td>未明确（HF公开）</td>
+            <td>中 — 规模较大但真实子集为临终关怀照护者（平均60岁），与学生差异大</td>
+          </tr>
+          <tr>
+            <td class="ds-name">RMHD (Reddit MH Dataset)</td>
+            <td>JMIR 2020 / Zenodo</td>
+            <td>Reddit 28个子版块心理健康帖子（含r/depression、r/SuicideWatch等）</td>
+            <td>826,961独立用户</td>
+            <td>未明确</td>
+            <td>中 — 超大规模心理健康社交媒体文本，可用于预训练/分类；翻译成本高（Reddit俚语）</td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://www.kaggle.com/datasets/mkaur1141/sentiment-analysis-for-mental-health-dataset" target="_blank">Sentiment Analysis for MH</a></td>
+            <td>Kaggle</td>
+            <td>社交媒体文本+7类心理标签（抑郁/自杀意念/焦虑等）</td>
+            <td>~53,049条</td>
+            <td>CC BY 4.0</td>
+            <td>中 — 文本分类数据，可用于心理状态识别；CC BY 4.0许可友好</td>
+          </tr>
+          <tr>
+            <td class="ds-name"><a href="https://www.kaggle.com/datasets/hopesb/student-depression-dataset" target="_blank">Student Depression Dataset</a></td>
+            <td>Kaggle</td>
+            <td>印度大学生抑郁状态调查（学业压力/睡眠/经济等）</td>
+            <td>27,901条</td>
+            <td>未查到</td>
+            <td>低 — 大规模结构化调查，适合抑郁风险分类；非对话语料，翻译成本低</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 微调选型建议 -->
+  <div class="section" id="recommend">
+    <h2 class="section-title">九、微调选型建议</h2>
+    <p class="section-desc">基于你"微调本地小模型 + 对当前数据集质量有疑问 + 寻找替代/补充/评估数据"的场景，给出以下分层建议。</p>
+
+    <div class="rec-box">
+      <h3>🥇 首选组合（直接可用，中文，免费）</h3>
+      <ol>
+        <li><strong>主力训练集：SoulChatCorpus</strong>（258K对话/151万轮，已格式化，学生场景覆盖好）+ <strong>CPCD</strong>（9万对话，唯一校园专属，补充校园场景特异性）。两者混合可兼顾规模和校园相关性。</li>
+        <li><strong>高质量补充：CPsyCounD</strong>（3.1K真实报告重构，作为高质量种子数据提升回复专业度）+ <strong>SMILECHAT</strong>（55K对话，基于真实QA扩展，含真实测试集可做评估）。</li>
+        <li><strong>如需要可商用：EmoLLM 数据集集合</strong>（MIT许可，16个子集，已整合上述多个数据集，配套微调配置）。这是唯一明确可商用的选项。</li>
+      </ol>
+    </div>
+
+    <div class="rec-box" style="background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fcd34d;">
+      <h3 style="color: #b45309;">🥈 定向增强（根据模型能力短板选择）</h3>
+      <ol>
+        <li><strong>需要长程对话能力：</strong>加入 <strong>PsyDial</strong>（平均37.8轮，隐私保护重构）或 <strong>PsyDTCorpus</strong>（平均18轮，咨询师流派风格）。</li>
+        <li><strong>需要推理/可解释能力：</strong>加入 <strong>SoulChat-R1</strong>（显式CoT）+ <strong>Psy-Insight</strong>（逐步推理标注）+ <strong>EmoLLM中的psychology-10k-Deepseek-R1-zh</strong>（R1蒸馏数据）。</li>
+        <li><strong>需要CBT取向/抑郁方向：</strong>加入 <strong>cPsychQASet</strong>（89K CBT问答三元组，真实论坛数据）。</li>
+        <li><strong>需要危机检测能力：</strong>加入 <strong>C-IMHI/SOS-HL-1K/SocialCD-3K</strong>（MentalGLM项目，免费，指令格式）。</li>
+        <li><strong>需要临床诊断能力：</strong>加入 <strong>MDD-5k</strong>（基于真实病历，免费）或申请 <strong>D4</strong>（抑郁问诊，EMNLP 2022）。</li>
+      </ol>
+    </div>
+
+    <div class="rec-box" style="background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%); border-color: #fca5a5;">
+      <h3 style="color: #b91c1c;">🥉 有门槛但值得关注（需申请/付费）</h3>
+      <ol>
+        <li><strong>预训练语料：efaqa-corpus-raw</strong>（4451万字，迄今最大中文心理咨询原始语料）— 如有预算，适合做继续预训练，显著提升模型在心理领域的语言基础。</li>
+        <li><strong>学术基准：PsyQA</strong>（22K/56K，奠基性数据集）— 申请获取后可作为评估基准，与 SMILECHAT 的 PsyTest 配合使用。</li>
+        <li><strong>青少年场景：DeepWell-Adol</strong>（1,795条，13.5岁）— 如模型面向中学生，关注论文发布后的数据开放。</li>
+        <li><strong>大规模补充：CPsDD</strong>（68K对话）和 <strong>AuraDial</strong>（30万+单轮）— 联系作者确认下载方式。</li>
+      </ol>
+    </div>
+
+    <div class="rec-box" style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #86efac;">
+      <h3 style="color: #15803d;">✅ 数据质量评估建议（针对你对当前数据集质量的疑问）</h3>
+      <ol>
+        <li><strong>用高质量数据集做评估基准：</strong>将 CPsyCounE（500条评估对话）、PsyTest（SMILECHAT真实测试集）、CPCD-Bench 作为标准评估集，对比你当前模型和用新数据微调后的模型表现。</li>
+        <li><strong>合成数据 vs 真实数据比例：</strong>当前主流数据集多为 LLM 合成，建议确保训练集中有一定比例的真实/半真实数据（CPsyCounD 基于真实报告、cPsychQASet 来自真实论坛、MDD-5k 基于真实病历），避免模型学到合成数据的模式化表达。</li>
+        <li><strong>校园场景筛选：</strong>从通用数据集中按关键词（学业、考试、宿舍、考研、就业、导师、同学关系、失恋、焦虑等）筛选校园相关子集，统计占比，评估当前数据的校园场景覆盖度。</li>
+        <li><strong>多维度质量检查：</strong>检查数据中的回复长度分布、共情表达多样性、咨询策略覆盖度、危机干预正确性（是否有鼓励自残等危险回复）、文化适配性（是否有不符合中国校园文化的建议）。</li>
+        <li><strong>去重和清洗：</strong>EmoLLM 已用 Simhash 去重，其他数据集可能存在重复样本，混合使用前建议统一去重。同时过滤掉低质量、过短、无关或有安全风险的样本。</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 注意事项 -->
+  <div class="section" id="caveats">
+    <h2 class="section-title">十、注意事项与伦理提醒</h2>
+    <div class="card">
+      <div style="margin-bottom: 16px;">
+        <h3 style="font-size: 15px; color: var(--danger); margin-bottom: 8px;">⚠️ 许可与合规</h3>
+        <ul style="padding-left: 20px; font-size: 14px; color: var(--gray-700);">
+          <li>仅 <strong>EmoLLM 数据集集合</strong>明确采用 MIT 许可可商用。多数数据集未声明许可或仅限研究用途，<strong>商用前务必逐一核实许可条款</strong>。</li>
+          <li>EFAQA 系列（春松许可证）需购买证书且禁止商用和二次分发；PsyQA/STAMPsy/D4 需签署协议申请；AuraDial 需非商业协议。</li>
+          <li>efaqa-corpus-raw 数据来自网络爬取，虽经脱敏但仍有隐私合规风险，部分来源网站已关闭。</li>
+        </ul>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <h3 style="font-size: 15px; color: var(--accent); margin-bottom: 8px;">🔬 数据真实性</h3>
+        <ul style="padding-left: 20px; font-size: 14px; color: var(--gray-700);">
+          <li>多数多轮对话由 LLM 合成（SoulChat、SMILECHAT、CPCD、PsyDTCorpus 等），可能存在模式单一、缺乏真实咨询深度、回复风格趋同等问题。</li>
+          <li>相对真实的数据包括：CPsyCounD（真实报告重构）、cPsychQASet（真实论坛）、MDD-5k（真实病历合成）、efaqa-corpus-raw（网络爬取真实用户倾诉）。</li>
+          <li>建议训练集中保留一定比例真实/半真实数据，避免模型完全学到合成数据的表达模式。</li>
+        </ul>
+      </div>
+      <div style="margin-bottom: 16px;">
+        <h3 style="font-size: 15px; color: var(--primary); margin-bottom: 8px;">🛡️ 安全与伦理</h3>
+        <ul style="padding-left: 20px; font-size: 14px; color: var(--gray-700);">
+          <li>心理咨询数据用于模型微调时，应在模型端做好<strong>安全对齐</strong>：自杀/自残干预、危机识别、转介专业帮助等，AI 不可替代真实心理咨询。</li>
+          <li>危机文本数据（SOS-HL-1K等）涉及自杀等高敏感内容，使用需伦理审查，训练时需确保模型不会学到危险行为。</li>
+          <li>PsyDial 采用 RMRR 方法专门做了隐私保护重构，是伦理上最稳妥的长程对话选择。</li>
+          <li>面向未成年人（DeepWell-Adol，13.5岁）的数据使用需额外注意未成年人保护相关法规。</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="font-size: 15px; color: var(--gray-700); margin-bottom: 8px;">📝 查证说明</h3>
+        <ul style="padding-left: 20px; font-size: 14px; color: var(--gray-700);">
+          <li>标注"已查证"的数据集：其来源链接、核心字段（规模/类型/许可）经多源交叉验证或直接读取官方 README/论文确认。</li>
+          <li>标注"一方称"的数据集（CPsDD、AuraDial、灵溪语音问诊等）：仅从单一来源获取信息，未交叉验证到独立可访问的下载地址，建议使用前直接联系作者确认。</li>
+          <li>部分数据集的 HuggingFace 页面在调研环境中无法直接访问，其 URL 从 GitHub README 中核实列出，可在正常网络环境下访问。</li>
+          <li>调研时间为 2026-08-31，数据集可能持续更新，建议使用前再次确认最新状态。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>开源校园心理相关数据集调研报告 | 调研日期：2026-08-31 | 覆盖 40+ 数据集</p>
+    <p>本报告所有数据集信息来自公开可访问的学术论文、GitHub仓库、数据集平台和机构官网，仅供研究参考。</p>
+  </div>
+
+</div>
+</body>
+</html>

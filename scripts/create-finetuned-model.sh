@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL_NAME="${FINETUNED_MODEL_NAME:-mindbridge-qwen2.5-7b-ft:latest}"
-MODEL_DIR="${FINETUNED_MODEL_DIR:-$ROOT_DIR/models/mindbridge-qwen2.5-7b-ft}"
+MODEL_DIR="${FINETUNED_MODEL_DIR:-$ROOT_DIR/finetuning/qwen25-7b-lora-mood-classify}"
 GGUF_FILE="${FINETUNED_MODEL_FILE:-mindbridge-qwen2.5-7b-ft-q4_k_m.gguf}"
 UPSTREAM_GGUF="${UPSTREAM_GGUF:-}"
 

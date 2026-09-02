@@ -120,7 +120,7 @@ def configure_environment() -> None:
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
     os.environ["AI_PROVIDER"] = "mock"
     os.environ["AGENT_FRAMEWORK"] = "event_driven_multi_agent"
-    os.environ["KNOWLEDGE_VECTOR_ENABLED"] = "false"
+    os.environ["KNOWLEDGE_VECTOR_ENABLED"] = "true"
     os.environ["KNOWLEDGE_VECTOR_REQUIRED"] = "false"
     os.environ["TOOL_QUEUE_ENABLED"] = "false"
     os.environ["ALERT_EMAIL_DELIVERY_MODE"] = "log"

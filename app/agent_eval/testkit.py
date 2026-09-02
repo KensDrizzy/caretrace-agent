@@ -158,6 +158,11 @@ class ScriptedModelRegistry(AgentModelRegistry):
     def client_for(self, agent_name: str, metrics_hook=None) -> AiClient:
         return ScriptedAiClient(self.settings, self.script, metrics_hook=metrics_hook, response_cursor=self._response_cursor)
 
+    def client_for_alias(self, alias: str, metrics_hook=None) -> AiClient:
+        # 确定性回放不区分 per-task profile：无论分类还是语义审核，都用同一个脚本化客户端，
+        # 否则 safety_review 等别名会落到真实 mock 客户端，破坏脚本化轨迹。
+        return ScriptedAiClient(self.settings, self.script, metrics_hook=metrics_hook, response_cursor=self._response_cursor)
+
 
 def default_eval_settings(keep_db: bool = False, db_path: Path | None = None) -> Settings:
     """离线回放专用配置：mock provider、关向量库、走工具队列（不启动 worker）。"""

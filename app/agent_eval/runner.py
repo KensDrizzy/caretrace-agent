@@ -46,7 +46,13 @@ def evaluate_case(
     evaluator: InvariantEvaluator,
     judge: RubricJudge | None,
     keep_db: bool = False,
+    run_fn=None,
 ) -> CaseEvalResult:
+    """评估单条 case。
+
+    run_fn 默认走 testkit.run_case（Scripted 假模型，确定性隔离回归）；
+    live 评测时注入 run_case_live，让真实 runtime 调真实模型。
+    """
     base = {
         "caseId": case.caseId,
         "split": case.split,
@@ -56,7 +62,10 @@ def evaluate_case(
         "expectedRisk": list(case.expected.risk),
     }
     try:
-        trace = run_case(case, keep_db=keep_db)
+        if run_fn is None:
+            trace = run_case(case, keep_db=keep_db)
+        else:
+            trace = run_fn(case)
     except Exception as exc:
         return CaseEvalResult(
             **base,

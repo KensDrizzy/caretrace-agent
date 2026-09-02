@@ -7,8 +7,17 @@ data/*.db
 data/*.sqlite
 data/*.xlsx
 data/chroma/
+data/chroma-snapshots/
+data/dataset/
+data/lora/
+data/user_*.png
 target/
 .DS_Store
 
+# Local research/scraping cache
+.firecrawl/
+
 # Model weights (large binary files)
 models/
+finetuning/**/*.gguf
+finetuning/**/training-logs/

@@ -10,7 +10,7 @@ __pycache__/
 data/
 models/*.gguf
 models/**/*.gguf
-models/mindbridge-qwen2.5-7b-ft/*.gguf
+finetuning/**/*.gguf
 target/
 .git/
 .github/

@@ -1328,13 +1328,17 @@ textarea {
   text-transform: uppercase;
 }
 
+.recent-session-row {
+  position: relative;
+}
+
 .recent-session-item {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
-  padding: 12px;
+  padding: 12px 42px 12px 12px;
   border: 1px solid #dce7e4;
   border-radius: 12px;
   background: #fbfdfc;
@@ -1362,6 +1366,109 @@ textarea {
 .recent-session-time {
   font-size: 11px;
   color: var(--muted);
+}
+
+.recent-session-rename {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #78918c;
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+
+.recent-session-rename svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.recent-session-rename:hover,
+.recent-session-rename:focus-visible {
+  background: #e7f2ef;
+  color: var(--student);
+}
+
+.recent-session-row.renaming > .recent-session-item,
+.recent-session-row.renaming > .recent-session-rename {
+  display: none;
+}
+
+.recent-session-rename-form {
+  min-height: 68px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px 30px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #76aaa2;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 8px 22px rgba(31, 95, 87, 0.1);
+}
+
+.recent-session-rename-input {
+  min-width: 0;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid #bfd5d0;
+  border-radius: 8px;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.recent-session-rename-input:focus {
+  border-color: #438d83;
+  box-shadow: 0 0 0 3px rgba(67, 141, 131, 0.12);
+}
+
+.recent-session-rename-save,
+.recent-session-rename-cancel {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.recent-session-rename-save {
+  background: #277a70;
+  color: white;
+}
+
+.recent-session-rename-cancel {
+  background: #edf3f1;
+  color: #627873;
+}
+
+.recent-session-rename-save:disabled,
+.recent-session-rename-cancel:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.recent-session-rename-error {
+  min-height: 12px;
+  grid-column: 1 / -1;
+  color: #a24747;
+  font-size: 10px;
 }
 
 .hidden { display: none !important; }

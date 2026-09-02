@@ -10,7 +10,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import current_user, require_admin
 from app.models.entities import UserAccount
-from app.schemas.dtos import KnowledgeIngestRequest, KnowledgeIngestResponse, ChatRequest, ChatSessionResponse, ConversationResponse, authority
+from app.schemas.dtos import ChatRequest, ChatSessionRenameRequest, ChatSessionResponse, ConversationResponse, KnowledgeIngestRequest, KnowledgeIngestResponse, authority
 from app.services.chat import ChatService
 from app.services.knowledge import KnowledgeService
 from app.services.model_assets import finetuned_model_status
@@ -107,6 +107,19 @@ def my_reports(user: Annotated[UserAccount, Depends(current_user)], db: Annotate
 @router.get("/api/chat/sessions")
 def my_sessions(user: Annotated[UserAccount, Depends(current_user)], db: Annotated[Session, Depends(get_db)]):
     return ReportService(db).user_sessions(user.id)
+
+
+@router.patch("/api/chat/sessions/{session_id}", response_model=ChatSessionResponse)
+def rename_my_session(
+    session_id: str,
+    request: ChatSessionRenameRequest,
+    user: Annotated[UserAccount, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        return ReportService(db).rename_user_session(user.id, session_id, request.title)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 @router.get("/api/chat/sessions/{session_id}")

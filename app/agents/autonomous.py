@@ -127,7 +127,13 @@ class BaseAutonomousAgent:
     def name(self) -> str:
         return self.profile.name
 
-    def client(self) -> AiClient:
+    def client(self, model_profile: str | None = None) -> AiClient:
+        # 默认按 Agent 名解析模型；同一 Agent 内部需要按任务切换模型时
+        # （如 SafetyAgent 分类走本地、语义审核走 API），显式传 model_profile。
+        if model_profile is not None:
+            return self.services.model_registry.client_for_alias(
+                model_profile, metrics_hook=self._llm_metrics_hook
+            )
         return self.services.model_registry.client_for(self.name, metrics_hook=self._llm_metrics_hook)
 
     def _llm_metrics_hook(self, metrics) -> None:
@@ -455,7 +461,9 @@ class SafetyAgent(BaseAutonomousAgent):
         返回 None 表示审核模型不可用，调用方回退为纯规则结论。
         """
         try:
-            raw = self.client().complete([
+            # 语义审核需要强推理，走独立的 safety_review profile（通常配置为 API 大模型），
+            # 与走本地微调模型的情绪/风险分类区分开。
+            raw = self.client("safety_review").complete([
                 AiMessage(role="system", content=(
                     f"{self.profile.system_prompt}\n"
                     "你正在审核一段即将发送给学生的回复。只输出一个 JSON 对象，格式："

@@ -58,9 +58,9 @@ app/
 ├── services/        # AI、聊天、知识库、评估、报告、工具、Trace 服务
 └── static/          # 原生前端页面
 
-models/mindbridge-qwen2.5-7b-ft/
+finetuning/qwen25-7b-lora-mood-classify/
 ├── Modelfile        # Ollama 模型定义
-└── README.md        # GGUF 模型放置说明
+└── *.gguf           # 本地微调模型权重（不提交 Git）
 
 skills/              # 标准 Skill 包（*/SKILL.md，运行时加载）
 tests/
@@ -265,13 +265,13 @@ mindbridge-qwen2.5-7b-ft:latest
 模型目录：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/
+finetuning/qwen25-7b-lora-mood-classify/
 ```
 
 需要放入的 GGUF 权重：
 
 ```text
-models/mindbridge-qwen2.5-7b-ft/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+finetuning/qwen25-7b-lora-mood-classify/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
 ```
 
 如果本机已经有其他位置的 GGUF 模型文件，可以通过 `UPSTREAM_GGUF` 指定路径并建立软链接：

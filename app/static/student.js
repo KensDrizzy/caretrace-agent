@@ -158,12 +158,88 @@ function groupSessionsByDay(sessions) {
 function renderSessionItem(s, groupKey, isHidden = false) {
   return `
     <li class="${isHidden ? 'hidden recent-collapsible' : ''}" data-group="${escapeHtml(groupKey)}">
-      <button class="recent-session-item" type="button" data-session-id="${escapeHtml(s.sessionId)}">
-        <span class="recent-session-title">${escapeHtml(s.title)}</span>
-        <span class="recent-session-time">${formatSessionTime(s.updatedAt)}</span>
-      </button>
+      <div class="recent-session-row">
+        <button class="recent-session-item" type="button" data-session-id="${escapeHtml(s.sessionId)}">
+          <span class="recent-session-title">${escapeHtml(s.title)}</span>
+          <span class="recent-session-time">${formatSessionTime(s.updatedAt)}</span>
+        </button>
+        <button class="recent-session-rename" type="button" data-rename-session-id="${escapeHtml(s.sessionId)}" aria-label="重命名对话" title="重命名对话">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.8 2.8 0 0 0-4-4L4 16v4Zm10.8-12.8 2 2"/></svg>
+        </button>
+      </div>
     </li>
   `;
+}
+
+function closeSessionRename(row) {
+  row.querySelector(".recent-session-rename-form")?.remove();
+  row.classList.remove("renaming");
+}
+
+function beginSessionRename(button) {
+  if (state.sending) return;
+  const row = button.closest(".recent-session-row");
+  if (!row || row.classList.contains("renaming")) return;
+  const sessionButton = row.querySelector(".recent-session-item");
+  const titleEl = row.querySelector(".recent-session-title");
+  const sessionId = button.dataset.renameSessionId;
+  const form = document.createElement("form");
+  form.className = "recent-session-rename-form";
+  form.innerHTML = `
+    <input class="recent-session-rename-input" type="text" maxlength="160" aria-label="新的对话名称">
+    <button class="recent-session-rename-save" type="submit" aria-label="保存名称" title="保存">✓</button>
+    <button class="recent-session-rename-cancel" type="button" aria-label="取消重命名" title="取消">×</button>
+    <span class="recent-session-rename-error" role="alert"></span>
+  `;
+  const input = form.querySelector("input");
+  const saveButton = form.querySelector(".recent-session-rename-save");
+  const cancelButton = form.querySelector(".recent-session-rename-cancel");
+  const errorEl = form.querySelector(".recent-session-rename-error");
+  input.value = titleEl.textContent.trim();
+  row.classList.add("renaming");
+  row.append(form);
+  input.focus();
+  input.select();
+
+  cancelButton.addEventListener("click", () => closeSessionRename(row));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSessionRename(row);
+      sessionButton.focus();
+    }
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const title = input.value.trim().replace(/\s+/g, " ");
+    if (!title) {
+      errorEl.textContent = "名称不能为空";
+      input.focus();
+      return;
+    }
+    input.disabled = true;
+    saveButton.disabled = true;
+    cancelButton.disabled = true;
+    errorEl.textContent = "保存中…";
+    try {
+      const response = await api(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title })
+      });
+      const renamed = await response.json();
+      titleEl.textContent = renamed.title;
+      closeSessionRename(row);
+      sessionButton.focus();
+    } catch (error) {
+      input.disabled = false;
+      saveButton.disabled = false;
+      cancelButton.disabled = false;
+      errorEl.textContent = "保存失败，请重试";
+      input.focus();
+      console.warn("重命名对话失败", error);
+    }
+  });
 }
 
 function renderRecentSessions(sessions) {
@@ -187,6 +263,9 @@ function renderRecentSessions(sessions) {
   highlightRecentSession(state.sessionId);
   els.recentSessions.querySelectorAll("[data-session-id]").forEach((btn) => {
     btn.addEventListener("click", () => loadSessionMessages(btn.dataset.sessionId));
+  });
+  els.recentSessions.querySelectorAll("[data-rename-session-id]").forEach((btn) => {
+    btn.addEventListener("click", () => beginSessionRename(btn));
   });
   els.recentSessions.querySelectorAll(".recent-show-more").forEach((btn) => {
     btn.addEventListener("click", () => {

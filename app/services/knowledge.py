@@ -125,7 +125,8 @@ class KnowledgeService:
         content_hash = content_hash or _hash_content(content)
         # 重新切块
         # 返回chunks列表，此时这些 chunk 只是存在于内存中，还没有保存到数据库或 Chroma。
-        chunks = chunk_text(content, self.settings.knowledge_chunk_size, self.settings.knowledge_chunk_overlap)
+        # 先切语义完整的父块，再在父块内切检索子块；子块负责召回，父块负责回答上下文。
+        chunks = split_parent_child_chunks(content, self.settings.knowledge_parent_chunk_size, self.settings.knowledge_chunk_size, self.settings.knowledge_chunk_overlap)
         # 删除 Chroma 中这个文档以前的向量。
         self._delete_vector_source(source)
         # 删除 MySQL 里的旧 chunks。
@@ -135,9 +136,16 @@ class KnowledgeService:
         self.db.query(KnowledgeChunk).filter(KnowledgeChunk.source == source).delete()
         rows = []
         # 然后创建新的数据库对象
-        for index, chunk in enumerate(chunks):
+        for index, item in enumerate(chunks):
             # 第一行只是创建 Python 对象，此时它还没有真正写入数据库。
-            row = KnowledgeChunk(source=source, source_index=index, content=chunk, content_hash=content_hash)
+            row = KnowledgeChunk(
+                source=source,
+                source_index=index,
+                content=item.child,
+                parent_index=item.parent_index,
+                parent_content=item.parent,
+                content_hash=content_hash,
+            )
             # 把这个对象放入 SQLAlchemy 当前 Session，状态类似：待插入数据库。但这时通常还没有执行真正的 SQL。
             self.db.add(row)
             rows.append(row)
@@ -184,8 +192,7 @@ class KnowledgeService:
         # 融合两种检索结果，返回topk个候选
         ranked = self._fuse_and_rerank(query, vector_results, bm25_results, top_k)
         if ranked:
-            # 比如最后rerank返回topk=4，
-            # 然后取top1的chunk，从同一来源中找它前后相邻的知识块，拼接成一个SearchResult，最后还是返回topk=4，只是对top1进行expansion
+            # 命中的 top1 子块回溯父块；其他结果仍保持小子块，避免上下文重复挤占 topK。
             return self._expand_best(ranked, top_k)
         return []
 
@@ -420,30 +427,173 @@ class KnowledgeService:
         chunk = self.db.get(KnowledgeChunk, result.chunk_id)
         if chunk is None:
             return result
-        neighbors = (
-            self.db.query(KnowledgeChunk)
+        parent = chunk.parent_content or "\n\n".join(
+            item.content
+            for item in self.db.query(KnowledgeChunk)
             .filter(KnowledgeChunk.source == chunk.source)
             .filter(KnowledgeChunk.source_index >= max(0, chunk.source_index - 1))
             .filter(KnowledgeChunk.source_index <= chunk.source_index + 1)
             .order_by(KnowledgeChunk.source_index.asc())
             .all()
         )
-        return SearchResult(chunk.id, chunk.source, "\n\n".join(item.content for item in neighbors), result.score)
+        return SearchResult(chunk.id, chunk.source, parent, result.score)
 
 
-def chunk_text(content: str, size: int, overlap: int) -> list[str]:
-    #  作用是把连续的空白字符统一成一个空格。
+@dataclass
+class ParentChildChunk:
+    parent_index: int
+    parent: str
+    child: str
+
+
+def split_text(content: str, size: int, overlap: int) -> list[str]:
+    """Split long text with paragraph, sentence, then jieba word boundaries."""
     text = re.sub(r"\s+", " ", content or "").strip()
-    #  如果文本为空，直接返回
     if not text:
         return []
+    if len(text) <= size:
+        return [text]
+
+    units = _paragraph_units(text)
+    chunks = _pack_units(units, size, overlap)
+    if all(len(chunk) <= size for chunk in chunks):
+        return chunks
+
+    # Paragraph packing can still exceed the target when a single paragraph is
+    # longer than size; split those units down to sentence and word boundaries.
+    chunks = []
+    for unit in units:
+        chunks.extend(_split_long_unit(unit, size, overlap))
+    return _pack_units(chunks, size, overlap)
+
+
+def split_parent_child_chunks(content: str, parent_size: int, child_size: int, child_overlap: int) -> list[ParentChildChunk]:
+    """Build retrieval children and attach each to a semantically complete parent."""
+    parents = split_parents(content, parent_size)
+    result: list[ParentChildChunk] = []
+    for parent_index, parent in enumerate(parents):
+        for child in split_text(parent, child_size, child_overlap):
+            result.append(ParentChildChunk(parent_index=parent_index, parent=parent, child=child))
+    return result
+
+
+def split_parents(content: str, parent_size: int) -> list[str]:
+    """Aggregate blank-line paragraphs into parents near the target size."""
+    paragraphs = [item.strip() for item in re.split(r"\n\s*\n", content or "") if item.strip()]
+    if not paragraphs:
+        return []
+
+    parents: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for paragraph in paragraphs:
+        projected = current_length + len(paragraph) + (2 if current else 0)
+        if current and projected > parent_size:
+            parents.append("\n\n".join(current))
+            current = [paragraph]
+            current_length = len(paragraph)
+        else:
+            current.append(paragraph)
+            current_length = projected
+    if current:
+        parents.append("\n\n".join(current))
+
+    # A paragraph can exceed the parent target. Rebuild those parents from
+    # smaller sentence/word windows while keeping each window paragraph-like.
+    result: list[str] = []
+    for parent in parents:
+        if len(parent) <= parent_size:
+            result.append(parent)
+            continue
+        result.extend(_split_long_unit(parent, parent_size, max(0, parent_size // 8)))
+    return result
+
+
+def _paragraph_units(text: str) -> list[str]:
+    # Prefer paragraph boundaries, then sentence punctuation. Keep punctuation
+    # attached so packed chunks remain readable.
+    paragraphs = [item.strip() for item in re.split(r"\n\s*\n", text) if item.strip()]
+    units: list[str] = []
+    for paragraph in paragraphs:
+        pieces = re.split(r"(?<=[。！？!?])\s*", paragraph)
+        units.extend(item.strip() for item in pieces if item.strip())
+    return units or [text]
+
+
+def _pack_units(units: list[str], size: int, overlap: int) -> list[str]:
+    if not units:
+        return []
+    packed: list[str] = []
+    current_parts: list[str] = []
+    for unit in units:
+        if len(unit) > size:
+            if current_parts:
+                packed.append(" ".join(current_parts))
+            current_parts = []
+            packed.extend(_split_long_unit(unit, size, overlap))
+            continue
+
+        projected = _parts_length([*current_parts, unit]) if current_parts else len(unit)
+        if current_parts and projected > size:
+            packed.append(" ".join(current_parts))
+            current_parts = _tail_parts(current_parts, overlap)
+            if _parts_length([*current_parts, unit]) > size:
+                current_parts = []
+
+        current_parts.append(unit)
+    if current_parts:
+        packed.append(" ".join(current_parts))
+    return packed
+
+
+def _parts_length(parts: list[str]) -> int:
+    return sum(len(part) for part in parts) + max(0, len(parts) - 1)
+
+
+def _tail_parts(parts: list[str], overlap: int) -> list[str]:
+    if overlap <= 0 or not parts:
+        return []
+    result: list[str] = []
+    total = 0
+    for part in reversed(parts):
+        projected = total + len(part) + (1 if result else 0)
+        if result and projected > overlap:
+            break
+        result.insert(0, part)
+        total = projected
+    return result
+
+
+def _split_long_unit(unit: str, size: int, overlap: int) -> list[str]:
+    if len(unit) <= size:
+        return [unit]
+    sentences = [item.strip() for item in re.split(r"(?<=[。！？!?])\s*", unit) if item.strip()]
+    if all(len(item) <= size for item in sentences):
+        return _pack_units(sentences, size, overlap)
+
+    words = jieba_words(unit)
+    if words and all(len(word) <= size for word in words):
+        return _pack_units(words, size, overlap)
+    if words:
+        packed = _pack_units(words, size, overlap)
+        if all(len(item) <= size for item in packed):
+            return packed
+
+    # Extremely long URLs or binary-like text have no usable boundary; fall
+    # back to fixed windows so ingestion cannot fail.
     chunks = []
     start = 0
-    step = max(1, size - overlap)
-    while start < len(text):
-        chunks.append(text[start:start + size])
+    step = max(1, size - max(0, overlap))
+    while start < len(unit):
+        chunks.append(unit[start:start + size])
         start += step
     return chunks
+
+
+def jieba_words(text: str) -> list[str]:
+    import jieba
+
+    return [item.strip() for item in jieba.cut(text) if item.strip()]
 
 
 def hybrid_score(query: str, content: str) -> float:

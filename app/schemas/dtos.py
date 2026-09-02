@@ -3,12 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     sessionId: Optional[str] = None
+
+
+class ChatSessionRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        title = " ".join(value.split())
+        if not title:
+            raise ValueError("会话名称不能为空")
+        return title
 
 
 class ChatStreamEvent(BaseModel):
