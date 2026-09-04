@@ -3,14 +3,20 @@
 import unittest
 
 from app.core.config import Settings
-from app.core.enums import EmotionLabel, RiskLevel
+from app.core.enums import EmotionLabel, IntentType, RiskLevel
 from app.services.agent_models import AgentModelRegistry
 from app.services.assessment import (
     PsychologicalAssessmentService,
     match_chinese_emotion_label,
     FINETUNED_EMOTION_INSTRUCTION,
 )
-from app.agents.autonomous import _bounded_knowledge_context, fallback_response_text
+from app.agents.autonomous import (
+    CARETRACE_CAPABILITY_INSTRUCTION,
+    _bounded_knowledge_context,
+    fallback_response_text,
+    is_caretrace_capability_query,
+)
+from app.services.ai import PromptTemplates
 
 
 class _FakeSettings:
@@ -159,6 +165,23 @@ class LocalResponseGuardTests(unittest.TestCase):
         text = fallback_response_text(RiskLevel.LOW)
         self.assertIn("压力很大", text)
         self.assertIn("十分钟", text)
+
+    def test_capability_query_variants_are_detected(self):
+        self.assertTrue(is_caretrace_capability_query("你能做什么？"))
+        self.assertTrue(is_caretrace_capability_query("请介绍一下你自己"))
+        self.assertTrue(is_caretrace_capability_query("你可以提供什么帮助？"))
+        self.assertFalse(is_caretrace_capability_query("帮我解释一下 Python 列表"))
+
+    def test_chat_prompt_preserves_caretrace_core_positioning(self):
+        prompt = PromptTemplates.answer_system_prompt(
+            IntentType.CHAT,
+            RiskLevel.LOW,
+            "",
+            "同学",
+        )
+        self.assertIn("校园心理陪伴与情绪支持", prompt.content)
+        self.assertIn("不能替代持证心理咨询师或医生", prompt.content)
+        self.assertIn("校园心理陪伴", CARETRACE_CAPABILITY_INSTRUCTION)
 
 
 if __name__ == "__main__":

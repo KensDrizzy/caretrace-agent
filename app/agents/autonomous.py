@@ -48,6 +48,19 @@ EXPLICIT_TOPIC_SWITCH_WORDS = [
     "前端", "后端", "接口", "bug", "报错", "作业", "论文", "翻译", "天气", "路线",
 ]
 
+CAPABILITY_QUERY_PHRASES = [
+    "你能做什么", "你会做什么", "你会什么", "你有什么功能", "你有哪些功能",
+    "你能提供什么帮助", "你可以提供什么帮助", "你能帮我什么", "介绍一下你自己",
+    "介绍下你自己", "你是谁", "你的能力", "你的功能",
+]
+
+CARETRACE_CAPABILITY_INSTRUCTION = (
+    "用户正在询问 CareTrace 的身份或能力。请先介绍校园心理陪伴与情绪支持这一核心定位，"
+    "明确提到可以支持学习压力、焦虑、低落、失眠、人际关系或校园适应中的至少三类问题，"
+    "以及风险情况下的校内资源转介；再简短说明可以协助一般校园生活。"
+    "不要宣称自己是心理咨询师、医生，也不要暗示可以替代专业心理咨询或医疗服务。"
+)
+
 # SafetyAgent 结构化审核规则词表（只记录 reasonCode，不记录思维链）
 BOUNDARY_VIOLATION_WORDS = ["绝对保密", "我确诊你", "你患有"]
 INTERNAL_PROCESS_WORDS = [
@@ -280,6 +293,8 @@ class UnderstandingAgent(BaseAutonomousAgent):
             return "safety"
         if has_consult_signal(lowered):
             return "mental_health_support"
+        if is_caretrace_capability_query(text):
+            return "caretrace_capabilities"
         if any(word in lowered for word in GENERAL_TASK_WORDS):
             return "general_task"
         return "conversation"
@@ -816,6 +831,11 @@ class ResponseAgent(BaseAutonomousAgent):
             max_chars=getattr(self.services.settings, "response_context_max_chars", 3200),
         )
         if intent == IntentType.CHAT and risk == RiskLevel.LOW:
+            capability_instruction = (
+                f"\n{CARETRACE_CAPABILITY_INSTRUCTION}"
+                if is_caretrace_capability_query(board.model_input or board.user_input)
+                else ""
+            )
             messages = [
                 PromptTemplates.answer_system_prompt(IntentType.CHAT, RiskLevel.LOW, "", self.services.user.display_name),
                 AiMessage(
@@ -823,6 +843,7 @@ class ResponseAgent(BaseAutonomousAgent):
                     content=(
                         f"{self.profile.system_prompt}\n"
                         "请自然、直接地回答用户。你的整段输出会原样展示给学生。\n"
+                        f"{capability_instruction}\n"
                         f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
                         f"记忆摘要：\n{memory_brief}"
                     ),
@@ -980,6 +1001,12 @@ def fallback_response_text(risk: RiskLevel) -> str:
         "今天必须处理的、可以慢慢推进的、暂时无法控制的；然后只选一件最小的事做十分钟。"
         "如果同时有持续失眠、吃不下饭或情绪越来越低落，建议联系身边可信任的人、辅导员或学校心理中心一起看看。"
     )
+
+
+def is_caretrace_capability_query(text: str) -> bool:
+    """识别询问 CareTrace 身份或能力的元问题；仍属于 CHAT，不触发心理 RAG。"""
+    normalized = "".join(str(text or "").lower().split()).replace("？", "").replace("?", "")
+    return any(phrase in normalized for phrase in CAPABILITY_QUERY_PHRASES)
 
 
 def _bounded_knowledge_context(knowledge: list[Any], max_chars: int = 6000) -> str:
