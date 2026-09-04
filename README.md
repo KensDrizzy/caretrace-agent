@@ -7,11 +7,12 @@
 - 事件驱动多 Agent 协作 runtime：Coordinator、Understanding、Safety、Context、Response 通过共享黑板、任务认领和安全审查协作。
 - 动态路由 RAG：先判断 `CHAT / CONSULT / RISK`，普通问题不查知识库，咨询和风险场景才进入检索增强。
 - Chroma 向量 RAG 知识库：支持 Markdown、txt、PDF 文件上传，自动切块，使用 `text-embedding-3-small` 写入向量库，并与 BM25 关键词召回融合后进入本地 reranker；向量不可用时保留本地 BM25 + 词面检索兜底。
-- 心理风险评估：高风险词典优先、LLM JSON 评估、关键词兜底。
+- 心理风险评估：确定性高风险规则优先；本地 Qwen2.5 分类输出受限标签，API 模型输出结构化 JSON；模型异常时回退到关键词启发式规则。
 - 后台报告：记录情绪标签、情绪分数、风险等级、置信度和摘要，但学生端不展示后台评估结果。
 - 数据闭环：咨询/风险消息完整写入 MySQL，短期上下文写入 Redis，高风险消息写入 Excel 台账并通过邮件发送预警。
-- 本地微调模型接入：支持通过 Ollama 加载 Qwen2.5 情绪分类模型和 Qwen3-14B 校园心理对话模型。
-- OpenAI-compatible API 接入：也可切换到云端模型。
+- 按任务混合调度：支持“Qwen2.5-7B 情绪分类 + DeepSeek API 多 Agent”和“Qwen2.5-7B 分类 + Qwen3-14B 全本地多 Agent”两套链路。
+- 本地微调模型接入：通过 Ollama 加载 4-bit GGUF 格式的 Qwen2.5 情绪分类模型与 Qwen3-14B 校园心理对话模型。
+- OpenAI-compatible API 接入：Agent 可分别选择 Ollama、DeepSeek 或其他兼容服务，不要求整条链路使用同一个 Provider。
 - MCP 工具服务：暴露 Excel 报告写入和风险通知工具，后端高风险后处理通过 MCP client 调用这些工具。
 - Agent Trace v2：每次请求一条统一 `trace_id` 的可回放轨迹，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复；事件落 `agent_trace_events` 表。
 - 离线评测：Golden Dataset（JSONL）+ 确定性 Hard Gate（轨迹不变量）+ 可替换 Rubric LLM Judge + 批量回归报告。
@@ -62,6 +63,10 @@ finetuning/qwen25-7b-lora-mood-classify/
 ├── Modelfile        # Ollama 模型定义
 └── *.gguf           # 本地微调模型权重（不提交 Git）
 
+finetuning/qwen3-14b-lora-full/
+├── Modelfile        # Qwen3-14B Ollama 模型定义
+└── *.gguf           # 校园心理对话模型权重（不提交 Git）
+
 skills/              # 标准 Skill 包（*/SKILL.md，运行时加载）
 tests/
 ├── eval/            # Golden Dataset（caretrace_gold.jsonl）与生成脚本
@@ -72,6 +77,7 @@ scripts/
 ├── run-dev.sh
 ├── start-ollama.sh
 ├── create-finetuned-model.sh
+├── create-campus-model.sh
 ├── package-release.sh
 ├── migrate_trace_v2.py   # Trace v2 数据库迁移（幂等）
 └── smoke_trace_v2.py     # Trace v2 冒烟脚本
@@ -255,89 +261,174 @@ ALERT_EMAIL_SUBJECT_PREFIX=[CareTrace 高风险预警]
 
 未配置 SMTP 或收件人时，系统不会中断聊天流程，但会在 `alert_records` 中写入 `FAILED` 记录，提示缺少的配置项。
 
-## 接入本地微调 GGUF 模型
+## 模型准备与按任务路由
 
-Python 版默认预留本地模型名：
+项目使用 `AgentModelRegistry` 为每类任务独立选择 Provider、模型、温度和最大输出 token。`AGENT_MODEL_<ALIAS>_*` 未配置时继承全局 `AI_PROVIDER` 及其默认模型；显式配置更适合复现实验和查看 Trace。
 
-```text
-mindbridge-qwen2.5-7b-ft:latest
-```
+| 任务别名 | 职责 | 混合模式 | 全本地模式 |
+| --- | --- | --- | --- |
+| `safety` | 当前消息的情绪/风险分类 | Qwen2.5-7B FT | Qwen2.5-7B FT |
+| `understanding` | `CHAT / CONSULT / RISK` 意图识别 | DeepSeek | Qwen3-14B FT |
+| `context` | 记忆聚合、RAG 查询改写和上下文整理 | DeepSeek | Qwen3-14B FT |
+| `response` | 生成完整候选回复 | DeepSeek | Qwen3-14B FT |
+| `safety_review` | 对候选回复做语义安全审核 | DeepSeek | Qwen3-14B FT |
+| `coordinator` | 冲突仲裁与最终采纳 | DeepSeek | Qwen3-14B FT |
 
-模型目录：
+这里的 `safety` 与 `safety_review` 是两个不同任务：前者分类用户输入，后者审核即将发给用户的候选回复。Qwen2.5 分类模型只承担前者。
 
-```text
-finetuning/qwen25-7b-lora-mood-classify/
-```
+### 创建两个 Ollama 模型
 
-需要放入的 GGUF 权重：
+模型权重是大文件，已由 Git 忽略，需要在本机放置：
 
 ```text
 finetuning/qwen25-7b-lora-mood-classify/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf
+finetuning/qwen3-14b-lora-full/caretrace-qwen3-14b-ft-q4_k_m.gguf
 ```
 
-如果本机已经有其他位置的 GGUF 模型文件，可以通过 `UPSTREAM_GGUF` 指定路径并建立软链接：
+根据各目录的 `Modelfile` 创建 Ollama 模型：
 
 ```bash
-UPSTREAM_GGUF=/path/to/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf ./scripts/create-finetuned-model.sh
+bash scripts/start-ollama.sh
+bash scripts/create-finetuned-model.sh
+bash scripts/create-campus-model.sh
 ```
 
-创建 Ollama 模型：
+如果 Qwen2.5 GGUF 位于其他目录，可由脚本建立软链接：
 
 ```bash
-./scripts/create-finetuned-model.sh
+UPSTREAM_GGUF=/path/to/mindbridge-qwen2.5-7b-ft-q4_k_m.gguf \
+  bash scripts/create-finetuned-model.sh
 ```
 
-启动 Ollama：
+创建后的默认名称为：
+
+```text
+mindbridge-qwen2.5-7b-ft:latest
+caretrace-qwen3-14b-ft:latest
+```
+
+### 方案一：Qwen2.5-7B 分类 + DeepSeek API
+
+该模式保留本地专用分类器，将理解、RAG 查询改写、回复生成、安全语义审核和最终协调交给 DeepSeek：
+
+```text
+用户输入
+-> 确定性高风险规则
+-> Qwen2.5-7B FT 情绪/风险分类
+-> DeepSeek Understanding + Context/RAG
+-> DeepSeek Response 生成候选回复
+-> DeepSeek Safety Review
+-> Coordinator 最终采纳并通过 SSE 发送同一文本
+```
+
+`.env` 参考配置：
+
+```env
+AI_PROVIDER=deepseek
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_API_KEY=你的_API_Key
+DEEPSEEK_MODEL=deepseek-v4-flash
+
+FINETUNED_MODEL_NAME=mindbridge-qwen2.5-7b-ft:latest
+AGENT_MODEL_SAFETY_PROVIDER=ollama
+AGENT_MODEL_SAFETY_MODEL=mindbridge-qwen2.5-7b-ft:latest
+AGENT_MODEL_SAFETY_MAX_TOKENS=128
+
+AGENT_MODEL_UNDERSTANDING_PROVIDER=deepseek
+AGENT_MODEL_UNDERSTANDING_MODEL=deepseek-v4-flash
+AGENT_MODEL_CONTEXT_PROVIDER=deepseek
+AGENT_MODEL_CONTEXT_MODEL=deepseek-v4-flash
+AGENT_MODEL_RESPONSE_PROVIDER=deepseek
+AGENT_MODEL_RESPONSE_MODEL=deepseek-v4-flash
+AGENT_MODEL_SAFETY_REVIEW_PROVIDER=deepseek
+AGENT_MODEL_SAFETY_REVIEW_MODEL=deepseek-v4-flash
+AGENT_MODEL_COORDINATOR_PROVIDER=deepseek
+AGENT_MODEL_COORDINATOR_MODEL=deepseek-v4-flash
+```
+
+Qwen2.5 分类调用只接收当前用户文本，提示词限制模型只能输出 `正常 / 焦虑 / 低落 / 高风险`。系统将四类标签分别映射为 `NORMAL / ANXIETY / DEPRESSED / HIGH_RISK`，并在模型输出无法解析时回退到确定性启发式分类。无论选择哪种 Provider，显式高风险规则始终先于模型执行，避免完全依赖生成式判断。
+
+### 方案二：Qwen2.5-7B + Qwen3-14B 全本地 LLM
+
+该模式不再调用 DeepSeek 完成 Agent 推理：Qwen2.5-7B 继续做受限标签分类，Qwen3-14B 负责其余理解与对话任务。
+
+```text
+用户输入
+-> 确定性高风险规则
+-> 本地 Qwen2.5-7B FT 情绪/风险分类
+-> 本地 Qwen3-14B FT Understanding + Context/RAG
+-> 本地 Qwen3-14B FT Response 生成候选回复
+-> 本地 Qwen3-14B FT Safety Review + Coordinator
+-> 最终采纳并通过 SSE 发送同一文本
+```
+
+`.env` 参考配置：
+
+```env
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=caretrace-qwen3-14b-ft:latest
+OLLAMA_THINK=false
+OLLAMA_TIMEOUT_SECONDS=180
+OLLAMA_NUM_CTX=4096
+RESPONSE_CONTEXT_MAX_CHARS=3200
+
+FINETUNED_MODEL_NAME=mindbridge-qwen2.5-7b-ft:latest
+CAMPUS_MODEL_NAME=caretrace-qwen3-14b-ft:latest
+
+AGENT_MODEL_SAFETY_PROVIDER=ollama
+AGENT_MODEL_SAFETY_MODEL=mindbridge-qwen2.5-7b-ft:latest
+AGENT_MODEL_SAFETY_MAX_TOKENS=128
+
+AGENT_MODEL_UNDERSTANDING_PROVIDER=ollama
+AGENT_MODEL_UNDERSTANDING_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_UNDERSTANDING_MAX_TOKENS=256
+AGENT_MODEL_CONTEXT_PROVIDER=ollama
+AGENT_MODEL_CONTEXT_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_CONTEXT_MAX_TOKENS=256
+AGENT_MODEL_RESPONSE_PROVIDER=ollama
+AGENT_MODEL_RESPONSE_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_RESPONSE_MAX_TOKENS=768
+AGENT_MODEL_SAFETY_REVIEW_PROVIDER=ollama
+AGENT_MODEL_SAFETY_REVIEW_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_SAFETY_REVIEW_MAX_TOKENS=256
+AGENT_MODEL_COORDINATOR_PROVIDER=ollama
+AGENT_MODEL_COORDINATOR_MODEL=caretrace-qwen3-14b-ft:latest
+AGENT_MODEL_COORDINATOR_MAX_TOKENS=256
+```
+
+本地推理的稳定性控制：
+
+- `OLLAMA_THINK=false` 禁用 Qwen3 隐式思考输出，避免推理 token 挤占可见回复预算。
+- Ollama HTTP 超时独立设为 180 秒；云端 Provider 保持较短超时，不互相污染 client 配置。
+- 各 Agent 单独限制最大输出 token，减少多 Agent 串联时的延迟和显存占用。
+- `OLLAMA_NUM_CTX=4096` 限制上下文窗口；`RESPONSE_CONTEXT_MAX_CHARS=3200` 对送入 ResponseAgent 的 RAG 知识文本做截断，避免长文档导致上下文溢出。
+- ResponseAgent 只生成一次完整候选；Safety Review 审核相同 artifact 版本，ChatService 流式重放已通过审核的文本，不进行第二次生成。
+- 模型超时、异常或返回空文本时，ResponseAgent 使用按风险等级区分的确定性安全回复，并在 Trace 中标记降级信息。
+
+“全本地”在这里特指聊天和 Agent 的 LLM 推理。若开启 Chroma 向量检索且 Embedding 指向云端接口，Embedding 仍会产生外部请求。要求完全离线时可设置：
+
+```env
+KNOWLEDGE_VECTOR_ENABLED=false
+```
+
+此时知识检索回退到本地 BM25 与本地 reranker；也可以另行配置兼容 OpenAI Embeddings 协议的本地向量服务。
+
+### 启动与状态检查
+
+完成任一方案的 `.env` 配置后启动服务：
 
 ```bash
-./scripts/start-ollama.sh
+bash scripts/run-dev.sh
 ```
 
-启动 Python 服务：
-
-```bash
-AI_PROVIDER=ollama ./scripts/run-dev.sh
-```
-
-查看模型接入状态：
+查看模型资产、Provider 路由和实际 Agent 框架：
 
 ```bash
 curl -u student:student123 http://127.0.0.1:8080/api/agent/status
 ```
 
-返回结果中的 `finetunedModel.ggufExists` 和 `finetunedModel.modelfileExists` 会显示模型资产是否就绪。
-`campusModel` 字段显示 Qwen3-14B 校园心理模型的资产状态。
-
-### 接入 Qwen3-14B 校园心理模型
-
-Qwen3-14B 是面向校园心理陪伴场景的完整对话模型，不要求只输出情绪标签。推荐让它负责理解、上下文检索改写、回复生成、安全语义审核和协调；Qwen2.5 继续负责严格的情绪/风险标签分类。
-
-```bash
-./scripts/create-campus-model.sh
-```
-
-启用本地混合链路（可写入 `.env`）：
-
-```env
-CAMPUS_MODEL_NAME=caretrace-qwen3-14b-ft:latest
-AGENT_MODEL_UNDERSTANDING_PROVIDER=ollama
-AGENT_MODEL_UNDERSTANDING_MODEL=caretrace-qwen3-14b-ft:latest
-AGENT_MODEL_CONTEXT_PROVIDER=ollama
-AGENT_MODEL_CONTEXT_MODEL=caretrace-qwen3-14b-ft:latest
-AGENT_MODEL_RESPONSE_PROVIDER=ollama
-AGENT_MODEL_RESPONSE_MODEL=caretrace-qwen3-14b-ft:latest
-AGENT_MODEL_SAFETY_REVIEW_PROVIDER=ollama
-AGENT_MODEL_SAFETY_REVIEW_MODEL=caretrace-qwen3-14b-ft:latest
-AGENT_MODEL_COORDINATOR_PROVIDER=ollama
-AGENT_MODEL_COORDINATOR_MODEL=caretrace-qwen3-14b-ft:latest
-```
-
-`AGENT_MODEL_SAFETY_*` 可继续指向 `mindbridge-qwen2.5-7b-ft:latest`，这样严格标签分类仍使用专门的 Qwen2.5 模型。模型权重文件不会提交到 Git。
-同时 `agentFramework.active` 会显示当前实际使用的 Agent 编排框架：
-
-```text
-event_driven_multi_agent
-```
+返回结果中的 `finetunedModel` 与 `campusModel` 显示 GGUF 和 `Modelfile` 是否就绪；`agentFramework.active` 应为 `event_driven_multi_agent`。模型权重不会提交到 Git。
 
 ## 接入 OpenAI-compatible API
 
@@ -464,7 +555,32 @@ python -m app.agent_eval.runner \
 - **Golden Dataset**：`tests/eval/caretrace_gold.jsonl` 共 120 条（dev 80 / heldout 40；CHAT 25 / CONSULT 55 / RISK 40；对抗与系统异常 29），区分 `human+synthetic / gold+silver` 标签可信度；核心指标只统计 gold，silver 用于覆盖扩展与回归扫描。GT 使用必需节点 / 禁止节点 / 部分顺序约束，不要求与某条固定标准轨迹一致。
 - **报告指标**：总通过率、Hard Gate 通过率、Intent/Risk Accuracy 与 Macro-F1、High-Risk Recall 与漏报率（漏报案例单独列出）、平均 Rubric 分、平均轮数与 Revision 次数、平均/P95 延迟、Budget Exhaustion Rate、无效 Agent 激活率、失败案例明细，并按 split 与 labelStatus 分组。
 
-回放默认使用 `ScriptedAiClient`（按 case 的 `modelScript` 确定性出参），不调用真实模型；接真实模型时用 `--judge llm --ai-provider ollama|openai|deepseek`。
+回放默认使用 `ScriptedAiClient`（按 case 的 `modelScript` 确定性出参），不调用真实模型。需要比较真实模型链路时使用 live runner；它会在隔离的 SQLite 环境运行同一套 Agent runtime，并把每个 Agent 实际解析到的 Provider/模型写入报告：
+
+```bash
+# A：全部 Agent 使用 DeepSeek API
+python -m app.agent_eval.live_runner \
+  --dataset tests/eval/caretrace_hard.jsonl \
+  --profile A \
+  --output reports/ablation_A_all_api.json \
+  --judge off
+
+# B：Qwen2.5-7B 分类，其余 Agent 使用 DeepSeek API
+python -m app.agent_eval.live_runner \
+  --dataset tests/eval/caretrace_hard.jsonl \
+  --profile B \
+  --output reports/ablation_B_7b_deepseek.json \
+  --judge off
+
+# env：完全按当前 .env 路由，可用于 Qwen2.5-7B + Qwen3-14B 全本地评测
+python -m app.agent_eval.live_runner \
+  --dataset tests/eval/caretrace_hard.jsonl \
+  --profile env \
+  --output reports/all_local_7b_14b.json \
+  --judge off
+```
+
+live runner 会关闭向量服务并固定采样温度，减少 Embedding 和随机采样对模型对比的干扰；`profile A/B` 使用代码内固定路由，`profile env` 不覆盖 `AGENT_MODEL_*`，适合验证当前部署配置。报告包含 Hard Gate 通过率、Intent/Risk Accuracy 与 Macro-F1、高风险召回率、平均/P95 延迟、预算耗尽率和逐案例 Trace 结果。正式对比语义质量时可将三组统一改为 `--judge llm`，并固定同一个 `--judge-provider`。
 
 ## 单元测试
 
