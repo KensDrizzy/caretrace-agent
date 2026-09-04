@@ -1697,6 +1697,84 @@ textarea {
   color: #1f3d38;
 }
 
+.student-chat .message.assistant .bubble.markdown-body {
+  white-space: normal;
+}
+
+.student-chat .markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.student-chat .markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.student-chat .markdown-body p {
+  margin: 0 0 12px;
+}
+
+.student-chat .markdown-body ul,
+.student-chat .markdown-body ol {
+  margin: 8px 0 14px;
+  padding-left: 1.5em;
+}
+
+.student-chat .markdown-body li {
+  margin: 5px 0;
+  padding-left: 0.15em;
+}
+
+.student-chat .markdown-body strong {
+  color: #173f39;
+  font-weight: 800;
+}
+
+.student-chat .markdown-body a {
+  color: #176c62;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.student-chat .markdown-body code {
+  padding: 0.12em 0.35em;
+  border: 1px solid #d5e3df;
+  border-radius: 5px;
+  background: #edf5f2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.student-chat .markdown-body pre {
+  max-width: 100%;
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid #d5e3df;
+  border-radius: 10px;
+  background: #eaf3f0;
+  white-space: pre;
+}
+
+.student-chat .markdown-body pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.student-chat .markdown-body blockquote {
+  margin: 10px 0 14px;
+  padding: 6px 0 6px 12px;
+  border-left: 3px solid #7fbeb6;
+  color: #486660;
+}
+
+.student-chat .markdown-body hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid #d5e3df;
+}
+
 .student-chat .message.user .bubble {
   border: 0;
   border-right: 3px solid #174f49;
