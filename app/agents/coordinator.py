@@ -16,6 +16,7 @@ from app.agents.events import (
 from app.agents.registry import AgentCapability, AgentCandidate, AgentRegistry
 from app.core.config import Settings
 from app.core.enums import IntentType, RiskLevel
+from app.services.web_access import wants_web_search
 
 
 class EventDrivenCoordinator:
@@ -202,7 +203,9 @@ class EventDrivenCoordinator:
         # intent 是 CONSULT 或 RISK → 需要上下文；
         # 或者 risk 是 MEDIUM 或 HIGH → 需要上下文；
         # 只要任意一个条件成立，needs_context 就是 True。
-        needs_context = intent in {IntentType.CONSULT, IntentType.RISK} or risk in {RiskLevel.MEDIUM, RiskLevel.HIGH}
+        needs_context = (intent in {IntentType.CONSULT, IntentType.RISK}
+                         or risk in {RiskLevel.MEDIUM, RiskLevel.HIGH}
+                         or wants_web_search(board.model_input))
         # 创建收集上下文任务
         board = self._ensure_task_for_missing_artifact(
             board,

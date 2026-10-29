@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -120,6 +121,18 @@ class Settings(BaseSettings):
     tool_queue_excel_workers: int = 1
     tool_queue_email_workers: int = 2
     alert_email_rate_limit_per_minute: int = 30
+
+    # 本机演示：只能由显式绑定的学生账号使用宿主机 Chrome 登录态。
+    web_access_enabled: bool = False
+    web_access_username: str = ""
+    web_access_browser_url: str = ""  # 空值使用 Chrome autoConnect
+    web_access_mcp_command: str = "npx"
+    web_access_mcp_args: list[str] = ["--yes", "chrome-devtools-mcp@1.12.0"]
+    web_access_node_bin: str = ""  # 可指定 Node 22 的 bin 目录
+    web_access_timeout_seconds: float = Field(default=90, ge=10, le=180)
+    web_access_tool_timeout_seconds: float = Field(default=20, ge=1, le=60)
+    web_access_max_results: int = Field(default=3, ge=1, le=5)
+    web_access_persistent: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

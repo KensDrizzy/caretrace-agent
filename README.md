@@ -14,6 +14,7 @@
 - 本地微调模型接入：通过 Ollama 加载 4-bit GGUF 格式的 Qwen2.5 情绪分类模型与 Qwen3-14B 校园心理对话模型。
 - OpenAI-compatible API 接入：Agent 可分别选择 Ollama、DeepSeek 或其他兼容服务，不要求整条链路使用同一个 Provider。
 - MCP 工具服务：暴露 Excel 报告写入和风险通知工具，后端高风险后处理通过 MCP client 调用这些工具。
+- 对话联网检索：按需加载 `web-access` Skill，通过 Chrome DevTools MCP 复用绑定账号的本机 Chrome 登录态，搜索小红书/知乎及公开网站的相似经历；返回实际来源链接，支持登录提示、超时、只读工具限制和 Trace。配置与本地演示见 [网页检索](docs/web-access.md)。
 - Agent Trace v2：每次请求一条统一 `trace_id` 的可回放轨迹，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复；事件落 `agent_trace_events` 表。
 - 离线评测：Golden Dataset（JSONL）+ 确定性 Hard Gate（轨迹不变量）+ 可替换 Rubric LLM Judge + 批量回归报告。
 - RAG 评测：Recall@K、Precision@K、MRR、NDCG@K、HitRate。

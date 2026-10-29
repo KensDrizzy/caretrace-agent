@@ -56,6 +56,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("shutdown")
     def shutdown() -> None:
+        from app.services.browser_worker import stop_browser_worker
+        stop_browser_worker()
         worker = getattr(app.state, "tool_queue_worker", None)
         if worker is not None:
             worker.stop()

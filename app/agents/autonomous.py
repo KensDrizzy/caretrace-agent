@@ -25,6 +25,7 @@ from app.schemas.dtos import AiMessage
 from app.services.agent_models import AgentModelRegistry
 from app.services.ai import AiClient, PromptTemplates, has_consult_signal, has_high_risk_signal
 from app.services.assessment import PsychologicalAssessmentService
+from app.services.web_access import WebAccessService, wants_web_search, web_prompt_messages, web_response_text
 
 if TYPE_CHECKING:
     from app.models.entities import ChatSession, UserAccount
@@ -209,6 +210,7 @@ class UnderstandingAgent(BaseAutonomousAgent):
             "currentIntent": current_intent.value,
             "continuation": continuation,
             "topic": self._topic(board.model_input or board.user_input),
+            "webRequested": wants_web_search(board.model_input or board.user_input),
             "reason": "high risk hard signal" if intent == IntentType.RISK else "autonomous intent proposal",
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
@@ -516,12 +518,16 @@ class ContextAgent(BaseAutonomousAgent):
         ),
         memory_policy="private_context_memory",
         model_profile="context",
-        tool_permissions=frozenset({"redis.memory", "mysql.messages", "rag.retrieve", "skills.read"}),
+        tool_permissions=frozenset({"redis.memory", "mysql.messages", "rag.retrieve", "skills.read", "web.research"}),
     )
 
     def decide(self, task: AgentTask, board: CollaborationBlackboard) -> AgentDecision:
         if board.latest_artifact("context"):
             return AgentDecision(False, reason="context artifact already exists", reason_code="CONTEXT_EXISTS")
+        if wants_web_search(board.model_input):
+            if not board.latest_artifact("intent") or not board.latest_artifact("risk"):
+                return AgentDecision(False, reason="web research waits for risk assessment", reason_code="PREREQUISITES_MISSING")
+            return AgentDecision(True, 0.88, "explicit web research request", reason_code="WEB_REQUESTED")
         if AgentCapability.CONTEXT.value in task.required_capabilities:
             return AgentDecision(True, 0.86, "task explicitly asks for context", reason_code="TASK_REQUIRES_CONTEXT")
         # Don't claim the root task based only on keyword signals before UnderstandingAgent
@@ -603,6 +609,20 @@ class ContextAgent(BaseAutonomousAgent):
             # 根据当前用户的意图、风险等级和原始输入，选择对应的几个 Skill 文件，
             # 并把这些文件的内容拼成一段字符串，保存到 skill_context 变量中。
             skill_context = MindBridgeSkillLibrary.response_skill_context(intent, risk, board.user_input)
+        web_research = None
+        if wants_web_search(board.model_input):
+            web_started = time.perf_counter()
+            result = WebAccessService(self.services.settings).search(
+                self.services.user.username, board.model_input, history, risk)
+            web_research = result.payload()
+            skill_context += "\n" + MindBridgeSkillLibrary.registry().get_required("web-access").prompt_context()
+            events += (AgentEvent(
+                type=(AgentEventType.WEB_RESEARCH_COMPLETED if result.status == "ok" else AgentEventType.WEB_RESEARCH_UNAVAILABLE),
+                actor=self.name, task_id=task.id, message="explicit web research finished",
+                metadata={"status": result.status, "site": result.site, "query": result.query,
+                          "sourceCount": len(result.sources), "skill": "web-access", "toolCalls": result.calls},
+                duration_ms=(time.perf_counter() - web_started) * 1000, round=board.current_round,
+            ),)
         payload = {
             "memoryBrief": memory_brief,
             "modelHistory": model_history,
@@ -610,6 +630,7 @@ class ContextAgent(BaseAutonomousAgent):
             "retrievedKnowledge": retrieved,
             "skillContext": skill_context,
             "agenticRagIterations": iterations,
+            "webResearch": web_research,
             "privateMemoryKey": self.services.private_memory._key(self.name, self.services.session.public_id),
         }
         # 写入context-agent的私有记忆，记录了本次context-agent的工作摘要
@@ -809,6 +830,8 @@ class ResponseAgent(BaseAutonomousAgent):
             return AgentDecision(False, reason="response needs intent and risk artifacts", reason_code="PREREQUISITES_MISSING")
         intent = _intent(board)
         risk = _risk_level(board)
+        if wants_web_search(board.model_input) and not board.latest_artifact("context") and risk != RiskLevel.HIGH:
+            return AgentDecision(False, reason="waiting for web research", reason_code="WAITING_FOR_CONTEXT")
         if intent == IntentType.CHAT and risk == RiskLevel.LOW:
             return AgentDecision(True, 0.78, "normal chat response can be proposed", reason_code="RESPONSE_READY")
         if board.latest_artifact("context") or risk == RiskLevel.HIGH:
@@ -822,6 +845,7 @@ class ResponseAgent(BaseAutonomousAgent):
         risk = _risk_level(board)
         context = board.latest_artifact("context")
         context_payload = context.payload if context else {}
+        web_research = context_payload.get("webResearch")
         model_history = context_payload.get("modelHistory") or list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
         memory_brief = context_payload.get("memoryBrief") or board.memory_brief or "无相关历史记忆。"
         knowledge = context_payload.get("retrievedKnowledge") or []
@@ -872,17 +896,24 @@ class ResponseAgent(BaseAutonomousAgent):
                 *model_history,
             ]
             mode = "support"
+        if web_research and risk != RiskLevel.HIGH:
+            # 将网页资料作为不可信数据放在当前请求之前；实际 URL 由代码渲染。
+            messages[-1:-1] = web_prompt_messages(web_research)
+            mode = "web_research"
         # ResponseAgent 直接生成完整候选文本；后续 SafetyAgent 审核、ChatService 发送的都是这份文本。
         llm_started = time.perf_counter()
         degraded = False
         error_type = None
         truncated = False
         try:
-            text = self.client().complete(messages).strip()
-            records = self.services.llm_call_records
-            if records:
-                latest_metrics = records[-1].get("metrics") if isinstance(records[-1], dict) else records[-1]
-                truncated = bool(getattr(latest_metrics, "truncated", False))
+            if web_research and risk != RiskLevel.HIGH and web_research.get("status") != "ok":
+                text = web_response_text("", web_research)
+            else:
+                text = self.client().complete(messages).strip()
+                records = self.services.llm_call_records
+                if records:
+                    latest_metrics = records[-1].get("metrics") if isinstance(records[-1], dict) else records[-1]
+                    truncated = bool(getattr(latest_metrics, "truncated", False))
         except Exception as exc:
             degraded = True
             error_type = type(exc).__name__
@@ -894,6 +925,8 @@ class ResponseAgent(BaseAutonomousAgent):
             # 输出被 max_tokens 截断：文本不完整但已生成，标记进 trace 供观测与评测，
             # 不降级（截断文本仍是模型真实输出，由安全审核决定是否可用）。
             self.remember("response truncated by max_tokens")
+        if web_research and risk != RiskLevel.HIGH:
+            text = web_response_text(text, web_research, degraded=degraded)
         llm_duration_ms = (time.perf_counter() - llm_started) * 1000.0
         revision_of = str(task.metadata.get("revisionOf") or "")
         previous = next((artifact for artifact in board.artifacts if artifact.id == revision_of), None) if revision_of else None

@@ -175,6 +175,7 @@ def default_eval_settings(keep_db: bool = False, db_path: Path | None = None) ->
         "knowledge_vector_required": False,
         "tool_queue_enabled": True,
         "alert_email_delivery_mode": "log",
+        "web_access_enabled": False,
     }
     return Settings(**overrides)
 

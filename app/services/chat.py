@@ -11,6 +11,7 @@ from app.core.config import Settings
 from app.models.entities import UserAccount
 from app.schemas.dtos import ChatRequest, ChatStreamEvent
 from app.services.ai import AiClient, ModelConnectionError, ModelNotFoundError, ModelTimeoutError, split_text
+from app.services.web_access import wants_web_search
 
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,8 @@ class ChatService:
         # The agent runtime is synchronous and may perform blocking LLM/DB calls.
         # Run it in the default thread pool so the ASGI event loop stays responsive.
         try:
+            if wants_web_search(request.message):
+                yield sse("status", ChatStreamEvent(type="status", message="正在整理你提到的主题并查找公开资料，请稍候……").model_dump())
             outcome = await asyncio.to_thread(self.agent_harness.run, user, request)
         except ModelNotFoundError:
             yield sse("error", ChatStreamEvent(type="error", sessionId=request.sessionId, message="模型未找到，请检查模型是否已加载或运行 create-finetuned-model.sh").model_dump(by_alias=True))

@@ -150,9 +150,10 @@ class InvariantEvaluator:
             fail("high_risk_override", "riskLevel=HIGH 但缺少 SAFETY_OVERRIDE 事件（高风险处置缺失）", hard=True)
 
         # 5. chat_low_no_context：闲聊低风险不应加载上下文/RAG
+        web_requested = any(a.kind == "intent" and a.payload.get("webRequested") is True for a in trace.artifacts)
         if trace.intent == "CHAT" and trace.riskLevel == "LOW":
             for event in trace.events:
-                if event.eventType == "AGENT_EXECUTION_COMPLETED" and event.actor == "ContextAgent":
+                if event.eventType == "AGENT_EXECUTION_COMPLETED" and event.actor == "ContextAgent" and not web_requested:
                     fail("chat_low_no_context", "CHAT+LOW 场景 ContextAgent 不应执行")
                     break
             rag_events = sorted(t for t in event_types if t.startswith("RAG_RETRIEVAL_"))

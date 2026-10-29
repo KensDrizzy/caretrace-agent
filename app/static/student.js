@@ -581,6 +581,10 @@ async function sendMessage(event) {
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       buffer = parseSse(buffer, (eventData) => {
+        if (eventData.type === "status") {
+          assistant.showBubble();
+          assistant.bubble.textContent = eventData.message || "正在查找公开资料……";
+        }
         if (eventData.type === "meta") {
           state.sessionId = eventData.sessionId;
           saveLastSession(eventData.sessionId);
