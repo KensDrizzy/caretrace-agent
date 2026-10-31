@@ -547,7 +547,8 @@ class ContextAgent(BaseAutonomousAgent):
         history = list(board.conversation_history)
         deterministic_brief = board.memory_brief
         # 让 ContextAgent 调用 LLM 【重新生成】更适合上下文检索的摘要：
-        memory_brief = self._summarize_memory(history, board.model_input, deterministic_brief)
+        memory_brief = (deterministic_brief if self.services.settings.student_memory_enabled
+                        else self._summarize_memory(history, board.model_input, deterministic_brief))
         model_history = list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
         intent = _intent(board)
         risk = _risk_level(board)
@@ -848,6 +849,11 @@ class ResponseAgent(BaseAutonomousAgent):
         web_research = context_payload.get("webResearch")
         model_history = context_payload.get("modelHistory") or list(board.model_history) or [AiMessage(role="user", content=board.model_input)]
         memory_brief = context_payload.get("memoryBrief") or board.memory_brief or "无相关历史记忆。"
+        # prepare() already embeds the brief in model_history. Keep one copy.
+        memory_instruction = "" if any(
+            message.role == "system" and memory_brief in message.content
+            for message in model_history
+        ) else f"记忆摘要：\n{memory_brief}"
         knowledge = context_payload.get("retrievedKnowledge") or []
         skill_context = context_payload.get("skillContext") or ""
         knowledge_context = _bounded_knowledge_context(
@@ -869,7 +875,7 @@ class ResponseAgent(BaseAutonomousAgent):
                         "请自然、直接地回答用户。你的整段输出会原样展示给学生。\n"
                         f"{capability_instruction}\n"
                         f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
-                        f"记忆摘要：\n{memory_brief}"
+                        f"{memory_instruction}"
                     ),
                 ),
                 *model_history,
@@ -890,7 +896,7 @@ class ResponseAgent(BaseAutonomousAgent):
                         f"{self.profile.system_prompt}\n"
                         "请共情、具体地回应用户。你的整段输出会原样展示给学生。\n"
                         f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
-                        f"记忆摘要：\n{memory_brief}"
+                        f"{memory_instruction}"
                     ),
                 ),
                 *model_history,

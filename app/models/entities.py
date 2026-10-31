@@ -49,6 +49,9 @@ class ChatSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
+    # Student-side deletion retains linked reports and audit records.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
     user: Mapped[UserAccount] = relationship(back_populates="sessions")
     messages: Mapped[list["ChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 

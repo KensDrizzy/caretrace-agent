@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -8,10 +8,14 @@ from app.core.database import Base, engine
 from app.core.security import hash_password
 from app.models.entities import UserAccount
 from app.services.knowledge import KnowledgeService
+from app.services.student_memory import StudentMemory, ConversationSummary
 
 
 def create_schema() -> None:
     Base.metadata.create_all(bind=engine)
+    if "deleted_at" not in {column["name"] for column in inspect(engine).get_columns("chat_sessions")}:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN deleted_at DATETIME NULL"))
     # Existing MySQL deployments may still have 64 KiB TEXT columns. Complete
     # multi-turn prompts plus RAG evidence can exceed that size, so widen only
     # the trace payload columns. SQLite/test environments need no migration.

@@ -29,7 +29,7 @@ from app.schemas.dtos import AiMessage
 from app.services.agent_models import AgentModelRegistry
 from app.services.ai import AiClient, PromptTemplates
 from app.services.knowledge import KnowledgeService, SearchResult
-from app.services.memory import RedisShortTermMemoryStore, compact_history_for_prompt, load_conversation_history
+from app.services.memory import RedisShortTermMemoryStore, compact_history_for_prompt, load_conversation_history, recent_complete_turns
 
 
 # 这是真正的 事件驱动多 Agent 运行时。一次调用会走完一整轮 Agent 协作流程，
@@ -65,6 +65,18 @@ class EventDrivenAgentRuntimeService:
             self.settings,
             model_input,
         )
+        memory_stats = {}
+        if self.settings.student_memory_enabled:
+            from app.services.student_memory import StudentMemoryService
+            try:
+                student_memory = StudentMemoryService(self.db, self.settings)
+                compacted_history, memory_brief = student_memory.prepare(user.id, session, model_input, conversation_history)
+                memory_stats = student_memory.stats
+                # Commit the short memory transaction before model/network calls.
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                memory_stats = {"degraded": True}
         model_history = self._bounded_model_history(
             [*compacted_history, AiMessage(role="user", content=model_input)]
         )
@@ -115,6 +127,9 @@ class EventDrivenAgentRuntimeService:
                 message="user turn published to shared task board",
             )
         )
+        if memory_stats:
+            board = board.append_event(AgentEvent(type=AgentEventType.MEMORY_PREPARED,
+                actor="StudentMemoryService", message="student-scoped memory prepared", metadata=memory_stats))
         # 启动协调器运行多 Agent 循环
         # AgentRegistry：管理所有业务 Agent。
         # EventDrivenCoordinator：实际的调度循环引擎。它会反复让 Agent 认领任务、执行、发布事件，直到产生被采纳的最终回复或达到最大步数（max_steps = 8）。
@@ -128,8 +143,8 @@ class EventDrivenAgentRuntimeService:
         if len(history) <= limit:
             return history
         if history[0].role == "system":
-            return [history[0], *history[-(limit - 1):]]
-        return history[-limit:]
+            return [history[0], *recent_complete_turns(history[1:], limit - 1)]
+        return recent_complete_turns(history, limit)
 
 # _to_result() 的作用是把黑板中的内容整理成一个 AgentRunResult
     def _to_result(

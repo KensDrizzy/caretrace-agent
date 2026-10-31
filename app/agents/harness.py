@@ -264,7 +264,14 @@ class MindBridgeAgentHarness:
         ]
 
     def save_message(self, user: UserAccount, session: ChatSession, role: MessageRole, content: str) -> None:
-        self.db.add(ChatMessage(user_id=user.id, session_id=session.id, role=role.value, content=content))
+        message = ChatMessage(user_id=user.id, session_id=session.id, role=role.value, content=content)
+        self.db.add(message)
+        self.db.flush()
+        if role == MessageRole.USER and self.settings.student_memory_enabled:
+            from app.services.student_memory import StudentMemoryService, extract_facts
+            service = StudentMemoryService(self.db, self.settings)
+            for kind, fact in extract_facts(content):
+                service.store(user.id, session.id, message.id, kind, fact)
         session.touch()
         self.db.add(session)
         self.db.commit()
@@ -272,7 +279,7 @@ class MindBridgeAgentHarness:
 
     def _resolve_session(self, user: UserAccount, public_id: str | None, text: str) -> ChatSession:
         if public_id:
-            session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user.id).first()
+            session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user.id, ChatSession.deleted_at.is_(None)).first()
             if session is None:
                 raise ValueError("Session not found")
             return session

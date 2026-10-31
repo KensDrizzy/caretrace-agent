@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from app.schemas.dtos import AiMessage
-from app.services.memory import compact_history_for_prompt, summarize_history_for_memory
+from app.services.memory import compact_history_for_prompt, summarize_history_for_memory, recent_complete_turns
 
 
 def settings(**overrides):
@@ -46,3 +46,10 @@ class MemoryCompactionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_recent_window_does_not_split_user_turn():
+    history = [AiMessage(role=role, content=str(i)) for i, role in enumerate(
+        ['user', 'assistant', 'user', 'assistant', 'assistant'])]
+    assert [m.content for m in recent_complete_turns(history, 2)] == ['2', '3', '4']
+    assert recent_complete_turns([AiMessage(role='assistant', content='orphan')], 2) == []

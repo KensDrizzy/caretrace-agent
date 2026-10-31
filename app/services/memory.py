@@ -150,6 +150,23 @@ def load_conversation_history(
     return history
 
 
+def recent_complete_turns(history: list[AiMessage], message_limit: int) -> list[AiMessage]:
+    """Keep the recent suffix without separating an assistant from its user turn.
+
+    The limit is a soft message target. An indivisible turn can exceed it;
+    the final request budget is responsible for bounding large turns.
+    """
+    if not history:
+        return []
+    start = max(0, len(history) - max(1, message_limit))
+    while start > 0 and history[start].role != "user":
+        start -= 1
+    # A bounded cache can begin halfway through a turn. Do not inject orphan replies.
+    while start < len(history) and history[start].role != "user":
+        start += 1
+    return history[start:]
+
+
 def compact_history_for_prompt(
     history: list[AiMessage],
     settings: MemoryCompactionSettings,
@@ -172,7 +189,7 @@ def compact_history_for_prompt(
     if not getattr(settings, "memory_compaction_enabled", True) or len(sanitized) <= recent_count:
         return sanitized, brief
 
-    recent = sanitized[-recent_count:]
+    recent = recent_complete_turns(sanitized, recent_count)
     summary_message = AiMessage(
         role="system",
         content=(

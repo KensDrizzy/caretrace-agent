@@ -102,6 +102,18 @@ class Settings(BaseSettings):
     memory_compaction_enabled: bool = True
     memory_compaction_recent_messages: int = 8
     memory_summary_max_chars: int = 500
+    student_memory_enabled: bool = True
+    memory_semantic_enabled: bool = True
+    memory_candidate_limit: int = Field(default=200, ge=1, le=2000)
+    memory_core_limit: int = Field(default=3, ge=0, le=10)
+    memory_recall_limit: int = Field(default=5, ge=0, le=20)
+    memory_half_life_days: float = Field(default=7, gt=0)
+    memory_lexical_min_score: float = Field(default=0.08, gt=0, le=1)
+    memory_semantic_min_score: float = Field(default=0.60, gt=0, le=1)
+    memory_embedding_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    memory_map_chunk_chars: int = Field(default=1200, ge=200, le=4000)
+    memory_prompt_max_chars: int = Field(default=1800, ge=300, le=4000)
+    memory_message_max_chars: int = Field(default=600, ge=100, le=2000)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""
