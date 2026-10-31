@@ -107,6 +107,11 @@ class CaseNoteResponse(BaseModel):
 
 
 class ToolJobResponse(BaseModel):
+    idempotencyKey: Optional[str] = None
+    traceId: str = ""
+    workerId: Optional[str] = None
+    leaseUntil: Optional[datetime] = None
+    result: dict[str, Any] = Field(default_factory=dict)
     id: int
     reportId: int
     kind: str
@@ -174,3 +179,7 @@ class AiMessage(BaseModel):
 
 def authority(role: str) -> dict[str, Any]:
     return {"authority": role}
+
+
+class ToolReplayRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)

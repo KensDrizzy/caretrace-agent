@@ -67,6 +67,14 @@ class RedisShortTermMemoryStore:
         except Exception as exc:
             logger.warning("Redis memory replace unavailable: %s", exc)
 
+    def clear(self, session_public_id: str) -> None:
+        if self.client is None:
+            return
+        try:
+            self.client.delete(self._key(session_public_id))
+        except Exception as exc:
+            logger.warning("Redis memory delete unavailable: %s", exc)
+
     def _read(self, session_public_id: str, limit: int) -> list[AiMessage]:
         raw_items = self.client.lrange(self._key(session_public_id), -limit, -1)
         messages = []

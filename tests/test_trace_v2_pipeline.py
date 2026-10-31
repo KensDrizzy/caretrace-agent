@@ -626,9 +626,9 @@ def test_runtime_crash_persists_failed_trace_row(monkeypatch):
         engine.dispose()
 
 
+@install_replay_patches()
 def _run_manual_turn(case: GoldenCase):
     """与 run_case 相同的内存环境，但把 harness/outcome 暴露给测试自行收尾。"""
-    install_replay_patches()
     InMemoryShortTermMemoryStore.reset()
     settings = default_eval_settings()
     engine = create_engine(

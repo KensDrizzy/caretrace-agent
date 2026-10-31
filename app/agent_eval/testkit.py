@@ -32,7 +32,6 @@ from app.services.ai import (
 )
 from app.services.trace import build_trace_record
 
-_MEMORY_PATCHED = False
 
 HIGH_RISK_DEFAULT_RESPONSE = (
     "我听到你现在已经痛苦到觉得撑不下去了。现在最重要的是先保证你的安全：请马上联系身边可信任的人，"
@@ -180,20 +179,14 @@ def default_eval_settings(keep_db: bool = False, db_path: Path | None = None) ->
     return Settings(**overrides)
 
 
-def install_replay_patches() -> None:
-    """把 Redis 记忆替换为进程内实现（幂等，可重复调用）。"""
-    global _MEMORY_PATCHED
-    import app.agents.event_driven_runtime as runtime_module
-    import app.agents.harness as harness_module
-    import app.services.memory as memory_module
-    from app.harness.runner import InMemoryShortTermMemoryStore
+def install_replay_patches():
+    """Return a scoped offline memory override; callers must use it as a context."""
+    from app.harness.runner import install_harness_patches
 
-    harness_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
-    memory_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
-    runtime_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
-    _MEMORY_PATCHED = True
+    return install_harness_patches()
 
 
+@install_replay_patches()
 def run_case(case: GoldenCase, settings: Settings | None = None, keep_db: bool = False) -> TraceRecord:
     """单 case 独立 InMemory DB 回放最后一轮用户消息，返回解析好的 v2 TraceRecord。"""
     from app.agents.event_driven_runtime import EventDrivenAgentRuntimeService  # noqa: F401  # 确保模块已加载再 patch
@@ -202,7 +195,6 @@ def run_case(case: GoldenCase, settings: Settings | None = None, keep_db: bool =
     from app.core.database import Base
     from app.harness.runner import InMemoryShortTermMemoryStore
 
-    install_replay_patches()
     InMemoryShortTermMemoryStore.reset()
 
     db_path: Path | None = None

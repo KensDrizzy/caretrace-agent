@@ -9,7 +9,8 @@
 - Chroma 向量 RAG 知识库：支持 Markdown、txt、PDF 文件上传，自动切块，使用 `text-embedding-3-small` 写入向量库，并与 BM25 关键词召回融合后进入本地 reranker；向量不可用时保留本地 BM25 + 词面检索兜底。
 - 心理风险评估：确定性高风险规则优先；本地 Qwen2.5 分类输出受限标签，API 模型输出结构化 JSON；模型异常时回退到关键词启发式规则。
 - 后台报告：记录情绪标签、情绪分数、风险等级、置信度和摘要，但学生端不展示后台评估结果。
-- 数据闭环：咨询/风险消息完整写入 MySQL，短期上下文写入 Redis，高风险消息写入 Excel 台账并通过邮件发送预警。
+- 分层记忆：MySQL 保存会话原文、学生事实和带游标的增量摘要，Redis 缓存近期上下文；按问题召回相关事实，去重并按字符软预算裁剪完整历史轮次。实现与配置见 [学生记忆](docs/student-memory.md)。
+- Skill 与工具治理：按主题与风险读取所需 Skill；报告与任务同事务入队，后台 Worker 经 MCP 执行 Excel、风险个案和预警，支持幂等回执、共享限流、退避重试和死信审计。实现与故障演示见 [工具执行流程](docs/tool-pipeline.md)。
 - 按任务混合调度：支持“Qwen2.5-7B 情绪分类 + DeepSeek API 多 Agent”和“Qwen2.5-7B 分类 + Qwen3-14B 全本地多 Agent”两套链路。
 - 本地微调模型接入：通过 Ollama 加载 4-bit GGUF 格式的 Qwen2.5 情绪分类模型与 Qwen3-14B 校园心理对话模型。
 - OpenAI-compatible API 接入：Agent 可分别选择 Ollama、DeepSeek 或其他兼容服务，不要求整条链路使用同一个 Provider。
@@ -18,6 +19,27 @@
 - Agent Trace v2：每次请求一条统一 `trace_id` 的可回放轨迹，覆盖 Agent 决策、任务调度、Artifact、LLM、RAG、工具执行和最终回复；事件落 `agent_trace_events` 表。
 - 离线评测：Golden Dataset（JSONL）+ 确定性 Hard Gate（轨迹不变量）+ 可替换 Rubric LLM Judge + 批量回归报告。
 - RAG 评测：Recall@K、Precision@K、MRR、NDCG@K、HitRate。
+
+## 记忆与工具链升级
+
+新库启动时自动创建记忆表与工具任务表。已有数据库先停止应用和 Worker，备份后执行工具表迁移，再重启应用：
+
+```bash
+.venv/bin/python scripts/migrate_tool_queue.py
+```
+
+默认开启分层记忆与持久化工具队列；`ALERT_EMAIL_DELIVERY_MODE=log` 仅记录模拟预警。真实 SMTP 需要配置发送信息和 Redis 共享限流。相关开关与预算见 `.env.example`。管理员可通过 `/api/admin/tool-jobs/{job_id}` 查看任务、执行事件与审计，通过 `/api/admin/tool-jobs/{job_id}/replay` 提交附带原因的死信重放。
+
+验证命令：
+
+```bash
+.venv/bin/python -m pytest -q
+.venv/bin/python -m app.harness.runner --suite tool-queue --json
+# 可选：使用一次性 Docker MySQL 验证工具链，不连接已有数据库
+.venv/bin/python scripts/check_tool_mysql.py
+```
+
+字符预算不等于精确 token 预算；SMTP 的投递结果未知时会进入人工核查流程，不会盲目重发。
 
 ## 技术栈
 
@@ -600,7 +622,7 @@ python -m pytest tests/ -q             # 全部测试（含 Trace/Eval 场景）
 - Agent runtime 调用和多 Agent 协作结果接入。
 - 心理报告落库和工具计划生成。
 - 学生与助手消息持久化。
-- Trace v2 落库：`finalize_trace` 在最终回复发送与工具执行之后写入 trace 主记录和全部事件（失败时落 `FAILED` + `error_json`）。
+- Trace v2 落库：首个 SSE 事件前保存本轮轨迹和入队事件；Worker 独立追加真实执行、重试和失败事件。报告入队失败则回滚并记录 `FAILED` + `error_json`。
 
 因此 HTTP 层只负责认证和 SSE 流式输出，Agent 后处理逻辑集中在 runtime harness 内。
 
@@ -613,7 +635,7 @@ python -m pytest tests/ -q             # 全部测试（含 Trace/Eval 场景）
 - Standard Skills Harness：验证 `skills/*/SKILL.md` 标准 Skill 加载、选择逻辑和交接摘要模板渲染。
 - RAG Harness：基于内置评测集验证 Recall@K、MRR、NDCG 和 HitRate。
 - API Harness：健康检查、认证授权、SSE 聊天、管理员知识库接口。
-- Tool Queue Harness：Excel / case / alert 依赖、幂等、限流和 dead letter。
+- Tool Queue Harness：MCP 实际调用、Excel / case / alert 依赖、幂等回执和 dead letter；共享限流与并发故障由 pytest 集成测试覆盖。
 
 ```bash
 python3 -m app.harness.runner
@@ -628,13 +650,13 @@ target/harness/rag-eval-report.json
 
 ## MCP 工具服务
 
-MCP Python 包建议使用 Python 3.10 或 3.11 安装运行。
+工具链使用 Python 3.11+，MCP SDK 版本由 `requirements.txt` 固定。
 
 ```bash
 python -m app.mcp_tools.server
 ```
 
-业务后端触发报告后处理时，默认通过异步工具队列复用同一套工具实现；关闭队列后会作为 MCP client 通过 stdio 启动同一个 MCP server。
+默认由持久化队列 Worker 作为 MCP client，通过 stdio 调用 MCP server；关闭队列时改为在请求中等待 MCP 执行。启动 MCP 前需要完成数据库初始化与旧库迁移，工具调用不会执行建表或迁移。
 
 暴露工具：
 

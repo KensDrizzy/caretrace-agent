@@ -7,8 +7,8 @@ from app.core.config import get_settings
 from app.core.database import Base, engine
 from app.core.security import hash_password
 from app.models.entities import UserAccount
-from app.services.knowledge import KnowledgeService
 from app.services.student_memory import StudentMemory, ConversationSummary
+from app.services.knowledge import KnowledgeService
 
 
 def create_schema() -> None:
@@ -16,6 +16,11 @@ def create_schema() -> None:
     if "deleted_at" not in {column["name"] for column in inspect(engine).get_columns("chat_sessions")}:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN deleted_at DATETIME NULL"))
+    required = {"tool_jobs": {"idempotency_key", "worker_id", "lease_token", "lease_until", "trace_id", "result_json"},
+                "alert_records": {"delivery_key", "retryable"}}
+    for table, columns in required.items():
+        if not columns.issubset({column["name"] for column in inspect(engine).get_columns(table)}):
+            raise RuntimeError("工具队列表需要迁移：停止应用和 Worker，运行 python scripts/migrate_tool_queue.py 后重启")
     # Existing MySQL deployments may still have 64 KiB TEXT columns. Complete
     # multi-turn prompts plus RAG evidence can exceed that size, so widen only
     # the trace payload columns. SQLite/test environments need no migration.

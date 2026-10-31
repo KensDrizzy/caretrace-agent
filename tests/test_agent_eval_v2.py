@@ -74,21 +74,17 @@ def consult_trace():
 
 
 def test_tool_queue_events_carry_idempotency_key(consult_trace):
-    started = _events(consult_trace, "TOOL_EXECUTION_STARTED")
-    finished = [
-        event
-        for event in consult_trace.events
-        if event.eventType in {"TOOL_EXECUTION_COMPLETED", "TOOL_EXECUTION_FAILED"}
-    ]
-    assert started, "CONSULT 回放（report + tool queue）应产生 TOOL_EXECUTION_STARTED"
-    assert finished, "应产生 TOOL_EXECUTION_COMPLETED/FAILED"
-    for event in [*started, *finished]:
+    queued = _events(consult_trace, "TOOL_EXECUTION_QUEUED")
+    assert queued, "CONSULT 回放应记录持久化入队"
+    for event in queued:
         metadata = event.metadata or {}
-        assert metadata.get("idempotencyKey"), f"{event.eventType} 必须带 idempotencyKey"
-        assert metadata.get("kind"), f"{event.eventType} 必须带工具 kind"
-    # queue 路径的幂等键形如 {kind}:{reportId}
-    keys = {event.metadata["idempotencyKey"] for event in finished}
-    assert all(":" in key for key in keys)
+        assert metadata.get("idempotencyKey")
+        assert metadata.get("kind")
+        assert metadata.get("jobId")
+        assert metadata.get("status") == "QUEUED"
+    assert not _events(consult_trace, "TOOL_EXECUTION_STARTED")
+    assert not _events(consult_trace, "TOOL_EXECUTION_COMPLETED")
+    assert not _events(consult_trace, "TOOL_EXECUTION_FAILED")
 
 
 def test_no_duplicate_idempotent_tool_rule_fails_on_duplicate_key():
@@ -107,25 +103,46 @@ def test_no_duplicate_idempotent_tool_rule_fails_on_duplicate_key():
     assert any("no_duplicate_idempotent_tool" in failure for failure in result.failures)
 
 
-def test_tool_execution_failed_event_metadata_structure(monkeypatch):
-    """工具入队失败：TOOL_EXECUTION_FAILED 事件 metadata 含 errorType / retryCount / idempotencyKey。"""
+def test_enqueue_failure_rolls_back_report_and_records_failed_trace(monkeypatch):
+    """报告与任务原子提交；入队失败不得留下无任务的报告或成功轨迹。"""
+    import json
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app.models.entities import AgentRunTrace, PsychologicalReport, ToolJob
 
-    def _raising_enqueue(self, report_id, risk_level):
+    def _raising_enqueue(self, report_id, risk_level, **kwargs):
+        assert kwargs["commit"] is False
         raise RuntimeError("tool queue backend down")
 
     monkeypatch.setattr(ToolQueueService, "enqueue_report", _raising_enqueue)
-    trace = run_case(make_case("t2e-tool-failure", CONSULT_TEXT))
+    with pytest.raises(RuntimeError, match="tool queue backend down"):
+        run_case(make_case("t2e-tool-failure", CONSULT_TEXT), keep_db=True)
 
-    failed = _events(trace, "TOOL_EXECUTION_FAILED")
-    assert failed, "enqueue 失败应产生 TOOL_EXECUTION_FAILED 事件"
-    metadata = failed[0].metadata or {}
-    assert metadata.get("errorType") == "RuntimeError"
-    assert "retryCount" in metadata and isinstance(metadata["retryCount"], int)
-    assert metadata.get("idempotencyKey")
-    assert metadata.get("status") == "FAILED"
-    # 工具失败不中断主流程
-    assert trace.status == "COMPLETED"
-    assert "TRACE_COMPLETED" in trace.event_types()
+    engine = create_engine("sqlite:///target/agent_eval/t2e-tool-failure.sqlite3")
+    try:
+        with Session(engine) as db:
+            assert db.query(PsychologicalReport).count() == 0
+            assert db.query(ToolJob).count() == 0
+            trace = db.query(AgentRunTrace).one()
+            assert trace.status == "FAILED"
+            assert json.loads(trace.error_json)["type"] == "RuntimeError"
+    finally:
+        engine.dispose()
+
+
+def test_replay_restores_memory_implementation_after_success_and_failure():
+    import app.services.memory as memory_module
+    from app.agent_eval.testkit import install_replay_patches
+    from app.harness.runner import InMemoryShortTermMemoryStore
+
+    original = memory_module.RedisShortTermMemoryStore
+    with pytest.raises(RuntimeError, match="abort replay"):
+        with install_replay_patches():
+            assert memory_module.RedisShortTermMemoryStore is InMemoryShortTermMemoryStore
+            raise RuntimeError("abort replay")
+    assert memory_module.RedisShortTermMemoryStore is original
+    run_case(make_case("t2e-restore-memory", CHAT_TEXT))
+    assert memory_module.RedisShortTermMemoryStore is original
 
 
 # ---------------------------------------------------------------------------

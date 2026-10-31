@@ -13,7 +13,7 @@ from app.agents.result import AgentRunResult, AgentStep
 from app.core.config import Settings
 from app.core.enums import IntentType, MessageRole, RiskLevel
 from app.core.timezone import now_cn
-from app.models.entities import ChatMessage, ChatSession, PsychologicalReport, UserAccount
+from app.models.entities import ChatMessage, ChatSession, PsychologicalReport, ToolJob, UserAccount
 from app.schemas.dtos import AiMessage, ChatRequest
 from app.services.assessment import PsychologyAssessment
 from app.services.knowledge import SearchResult
@@ -106,7 +106,26 @@ class MindBridgeAgentHarness:
         self.save_message(user, session, MessageRole.USER, original_input)
         # Harness 根据 Agent 结果创建心理报告，
         # 报告只在 intent != CHAT 且有风险评估时创建
-        report = self._create_report(user, session, original_input, agent_run)
+        try:
+            report = self._create_report(user, session, original_input, agent_run)
+        except Exception as exc:
+            # Queue submission is part of the report transaction. Preserve the
+            # actual run's diagnostics after rollback rather than claiming success.
+            agent_run.status = "FAILED"
+            agent_run.error = {"type": type(exc).__name__, "message": str(exc)[:500]}
+            agent_run.completed_at = now_cn()
+            agent_run.collaboration_events.append(AgentEvent(
+                type=AgentEventType.TRACE_FAILED,
+                actor="MindBridgeAgentHarness",
+                message="report and tool submission rolled back",
+                metadata={"errorType": type(exc).__name__, "stage": "report_enqueue"},
+            ))
+            AgentTraceService(self.db).save_run(
+                user=user, session=session, original_input=original_input,
+                sanitized_input=model_input, memory_brief=agent_run.memory_brief,
+                agent_run=agent_run, report_id=None,
+            )
+            raise
         risk_level = report.risk_level if report is not None else None
         # 创建工具计划，这就是 Agent Runtime 和 MCP/工具系统之间真正的连接点：
         # 创建AgentToolPlan，它不是 LLM 生成的，也不是某个 Agent 在 act() 中生成的，而是 Harness 根据报告结果确定性创建的。
@@ -137,30 +156,17 @@ class MindBridgeAgentHarness:
         if agent_run is None:
             return
         for record in tool_records:
-            agent_run.collaboration_events.append(
-                AgentEvent(
-                    type=AgentEventType.TOOL_EXECUTION_STARTED,
-                    actor="ToolDispatcher",
-                    message=str(record.get("kind", "")),
-                    metadata={"kind": record.get("kind", ""), "idempotencyKey": record.get("idempotencyKey", "")},
-                )
-            )
-            failed = record.get("status") == "FAILED"
-            agent_run.collaboration_events.append(
-                AgentEvent(
-                    type=AgentEventType.TOOL_EXECUTION_FAILED if failed else AgentEventType.TOOL_EXECUTION_COMPLETED,
-                    actor="ToolDispatcher",
-                    message=str(record.get("kind", "")),
-                    metadata={
-                        "kind": record.get("kind", ""),
-                        "status": record.get("status", ""),
-                        "retryCount": record.get("retryCount", 0),
-                        "idempotencyKey": record.get("idempotencyKey", ""),
-                        "errorType": record.get("errorType"),
-                    },
-                    duration_ms=record.get("durationMs"),
-                )
-            )
+            status = record.get("status", "")
+            event_type = (AgentEventType.TOOL_EXECUTION_QUEUED if status == "QUEUED" else
+                          AgentEventType.TOOL_EXECUTION_FAILED if status == "FAILED" else
+                          AgentEventType.TOOL_EXECUTION_SIMULATED if status == "SIMULATED" else
+                          AgentEventType.TOOL_EXECUTION_COMPLETED)
+            agent_run.collaboration_events.append(AgentEvent(
+                type=event_type, actor="ToolDispatcher", message=str(record.get("kind", "")),
+                metadata={"kind": record.get("kind", ""), "status": status,
+                          "jobId": record.get("jobId"), "retryCount": record.get("retryCount", 0),
+                          "idempotencyKey": record.get("idempotencyKey", ""), "errorType": record.get("errorType")},
+                duration_ms=record.get("durationMs")))
         if error is not None:
             agent_run.status = "FAILED"
             agent_run.error = {"type": type(error).__name__, "message": str(error)[:500]}
@@ -195,32 +201,14 @@ class MindBridgeAgentHarness:
     def save_assistant_message(self, user: UserAccount, session: ChatSession, content: str) -> None:
         self.save_message(user, session, MessageRole.ASSISTANT, content)
 
-# 聊天处理结束后，会根据风险报告调用
-# 默认走异步队列
     async def dispatch_tools(self, tool_plan: AgentToolPlan) -> list[dict]:
-        """执行回复后工具；返回结构化执行记录，任何失败都不中断主流程。"""
+        """Describe committed queue work, or execute explicit synchronous MCP mode."""
         if tool_plan.report_id is None:
             return []
         if self.settings.tool_queue_enabled:
             started = time.perf_counter()
-            try:
-                # enqueue_report() 根据风险等级创建不同任务：
-                # LOW	写入 Excel
-                # MEDIUM 写入 Excel、创建风险个案
-                # HIGH	写入 Excel、创建风险个案、发送预警
-                jobs = ToolQueueService(self.db, self.settings).enqueue_report(tool_plan.report_id, tool_plan.risk_level)
-            except Exception as exc:
-                return [
-                    {
-                        "kind": "tool_queue",
-                        "status": "FAILED",
-                        "durationMs": (time.perf_counter() - started) * 1000.0,
-                        "retryCount": 0,
-                        "idempotencyKey": f"tool_queue:{tool_plan.report_id}",
-                        "errorType": type(exc).__name__,
-                        "detail": str(exc)[:200],
-                    }
-                ]
+            # Already committed atomically with the report; this only describes submission.
+            jobs = self.db.query(ToolJob).filter_by(report_id=tool_plan.report_id).all()
             duration_ms = (time.perf_counter() - started) * 1000.0
             return [
                 {
@@ -228,7 +216,8 @@ class MindBridgeAgentHarness:
                     "status": "QUEUED",
                     "durationMs": duration_ms,
                     "retryCount": job.attempts,
-                    "idempotencyKey": f"{job.kind}:{tool_plan.report_id}",
+                    "idempotencyKey": job.idempotency_key,
+                    "jobId": job.id,
                     "errorType": None,
                     "detail": f"job_id={job.id}",
                 }
@@ -253,10 +242,10 @@ class MindBridgeAgentHarness:
         return [
             {
                 "kind": "mcp_tool",
-                "status": "COMPLETED",
+                "status": "SIMULATED" if result.get("status") == "SIMULATED" else "COMPLETED",
                 "durationMs": duration_ms,
                 "retryCount": 0,
-                "idempotencyKey": f"mcp_tool:{tool_plan.report_id}",
+                "idempotencyKey": result.get("idempotencyKey", ""),
                 "errorType": None,
                 "detail": str(result)[:200],
             }
@@ -303,7 +292,15 @@ class MindBridgeAgentHarness:
             confidence=agent_run.assessment.confidence,
             summary=agent_run.assessment.summary,
         )
-        self.db.add(report)
-        self.db.commit()
+        try:
+            self.db.add(report)
+            self.db.flush()
+            if self.settings.tool_queue_enabled:
+                ToolQueueService(self.db, self.settings).enqueue_report(
+                    report.id, report.risk_level, commit=False, trace_id=agent_run.trace_id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
         self.db.refresh(report)
         return report

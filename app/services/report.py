@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models.entities import AlertRecord, AgentRunTrace, CaseNote, ChatMessage, ChatSession, DeadLetterRecord, ExcelRecord, PsychologicalReport, RiskCase, ToolAuditRecord, ToolJob, UserAccount
+from app.models.entities import AlertRecord, AgentRunTrace, AgentTraceEvent, CaseNote, ChatMessage, ChatSession, DeadLetterRecord, ExcelRecord, PsychologicalReport, RiskCase, ToolAuditRecord, ToolJob, UserAccount, now
 from app.schemas.dtos import AgentRunTraceResponse, CaseNoteResponse, ChatSessionResponse, ConversationMessageResponse, ConversationResponse, DeadLetterResponse, ReportResponse, RiskCaseResponse, ToolAuditResponse, ToolJobResponse, ToolRecordResponse
 
 
@@ -64,14 +64,22 @@ class ReportService:
             for row in rows
         ]
 
-    def tool_jobs(self) -> list[ToolJobResponse]:
-        rows = self.db.query(ToolJob).order_by(ToolJob.created_at.desc()).limit(100).all()
+    def tool_jobs(self, job_id: int | None = None) -> list[ToolJobResponse]:
+        query = self.db.query(ToolJob)
+        if job_id is not None:
+            query = query.filter(ToolJob.id == job_id)
+        rows = query.order_by(ToolJob.created_at.desc()).limit(100).all()
         return [
             ToolJobResponse(
                 id=row.id,
                 reportId=row.report_id,
                 kind=row.kind,
                 status=row.status,
+                idempotencyKey=row.idempotency_key,
+                traceId=row.trace_id or "",
+                workerId=row.worker_id,
+                leaseUntil=row.lease_until,
+                result=_loads(row.result_json, {}),
                 attempts=row.attempts,
                 maxAttempts=row.max_attempts,
                 dependsOnJobId=row.depends_on_job_id,
@@ -82,6 +90,22 @@ class ReportService:
             )
             for row in rows
         ]
+
+    def tool_job_detail(self, job_id: int) -> dict:
+        jobs = self.tool_jobs(job_id)
+        if not jobs:
+            raise ValueError("任务不存在")
+        events = self.db.query(AgentTraceEvent).filter(
+            AgentTraceEvent.actor == "ToolQueueWorker", AgentTraceEvent.task_id == str(job_id)
+        ).order_by(AgentTraceEvent.id).all()
+        audits = self.db.query(ToolAuditRecord).filter_by(job_id=job_id).order_by(ToolAuditRecord.id).all()
+        return {
+            "job": jobs[0],
+            "events": [{"eventType": row.event_type, "timestamp": row.timestamp,
+                        "metadata": _loads(row.metadata_json, {})} for row in events],
+            "audits": [{"status": row.status, "reason": row.reason,
+                        "payload": _loads(row.payload, {}), "createdAt": row.created_at} for row in audits],
+        }
 
     def dead_letters(self) -> list[DeadLetterResponse]:
         rows = self.db.query(DeadLetterRecord).order_by(DeadLetterRecord.created_at.desc()).limit(100).all()
@@ -162,11 +186,11 @@ class ReportService:
         )
 
     def user_sessions(self, user_id: int) -> list[ChatSessionResponse]:
-        rows = self.db.query(ChatSession).filter(ChatSession.user_id == user_id).order_by(ChatSession.updated_at.desc()).limit(50).all()
+        rows = self.db.query(ChatSession).filter(ChatSession.user_id == user_id, ChatSession.deleted_at.is_(None)).order_by(ChatSession.updated_at.desc()).limit(50).all()
         return [ChatSessionResponse(sessionId=row.public_id, title=row.title, updatedAt=row.updated_at) for row in rows]
 
     def rename_user_session(self, user_id: int, public_id: str, title: str) -> ChatSessionResponse:
-        session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id).first()
+        session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id, ChatSession.deleted_at.is_(None)).first()
         if session is None:
             raise ValueError("Session not found")
         session.title = title
@@ -174,8 +198,19 @@ class ReportService:
         self.db.refresh(session)
         return ChatSessionResponse(sessionId=session.public_id, title=session.title, updatedAt=session.updated_at)
 
+    def delete_user_session(self, user_id: int, public_id: str) -> None:
+        session = self.db.query(ChatSession).filter(
+            ChatSession.public_id == public_id, ChatSession.user_id == user_id
+        ).first()
+        if session is None:
+            raise ValueError("Session not found")
+        # Idempotent soft deletion keeps reports, cases and trace associations intact.
+        if session.deleted_at is None:
+            session.deleted_at = now()
+            self.db.commit()
+
     def user_conversation(self, user_id: int, public_id: str) -> ConversationResponse:
-        session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id).first()
+        session = self.db.query(ChatSession).filter(ChatSession.public_id == public_id, ChatSession.user_id == user_id, ChatSession.deleted_at.is_(None)).first()
         if session is None:
             raise ValueError("Session not found")
         rows = self.db.query(ChatMessage).filter(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at.asc()).all()

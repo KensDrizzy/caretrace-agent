@@ -29,6 +29,9 @@ class EmotionLabel(str, Enum):
 class ToolStatus(str, Enum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    SIMULATED = "SIMULATED"
+    SENDING = "SENDING"
+    UNKNOWN = "UNKNOWN"
 
 
 class ToolJobKind(str, Enum):
@@ -43,6 +46,8 @@ class ToolJobStatus(str, Enum):
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     DEAD = "DEAD"
+    RETRY_WAIT = "RETRY_WAIT"
+    SIMULATED = "SIMULATED"
 
 
 class RiskCaseStatus(str, Enum):

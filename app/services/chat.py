@@ -42,6 +42,10 @@ class ChatService:
             yield sse("error", ChatStreamEvent(type="error", sessionId=request.sessionId, message="处理失败，请稍后再试").model_dump(by_alias=True))
             return
 
+        # Persisted queue work is independent of SSE consumption. In explicit
+        # synchronous compatibility mode, finish dispatch before yielding too.
+        tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
+        self._finalize_safely(outcome, tool_records)
         yield sse("meta", ChatStreamEvent(type="meta", sessionId=outcome.session.public_id).model_dump(by_alias=True))
         try:
             # 直接发送 ResponseAgent 生成、SafetyAgent 审核过的同一份文本，不再调用模型；
@@ -56,15 +60,11 @@ class ChatService:
             # 保存助手消息
             if outcome.final_response:
                 self.agent_harness.save_assistant_message(user, outcome.session, outcome.final_response)
-            # dispatch_tools() 根据 plan 执行工具     工具执行失败通常不会改变已经发送给学生的文本
-            tool_records = await self.agent_harness.dispatch_tools(outcome.tool_plan)
-        except Exception as exc:
+        except Exception:
             logger.exception("Post-harness stage failed for session=%s", outcome.session.public_id)
-            self._finalize_safely(outcome, [], error=exc)
+            # The accepted run and queued work have already been recorded.
             yield sse("error", ChatStreamEvent(type="error", sessionId=outcome.session.public_id, message="处理失败，请稍后再试").model_dump())
             return
-        # Trace 落库失败不应打断学生端已完成的回复流，只记录日志。
-        self._finalize_safely(outcome, tool_records)
         yield sse("done", ChatStreamEvent(type="done", sessionId=outcome.session.public_id).model_dump())
 
     def _finalize_safely(self, outcome, tool_records: list[dict], error: Exception | None = None) -> None:

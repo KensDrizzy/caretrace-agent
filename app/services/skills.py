@@ -87,10 +87,18 @@ class MindBridgeSkillRegistry:
         return items
 
     def get_required(self, name: str) -> MindBridgeSkill:
-        for skill in self.list_skills():
-            if skill.name == name:
-                return skill
-        raise SkillLoadError(f"required standard skill not found: {name}")
+        # Only read the selected Skill body. An unrelated broken Skill must not
+        # block a response, and callers cannot use this lookup to traverse paths.
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+            raise SkillLoadError(f"invalid skill name: {name}")
+        path = self.root / name / "SKILL.md"
+        if not path.is_file() or not path.resolve().is_relative_to(self.root.resolve()):
+            raise SkillLoadError(f"required standard skill not found: {name}")
+        skill = self._load_skill_file(path)
+        errors = [issue.message for issue in skill.validation_issues() if issue.level == "ERROR"]
+        if errors:
+            raise SkillLoadError("; ".join(errors))
+        return skill
 
     def template_for(self, name: str) -> str:
         skill = self.get_required(name)
@@ -143,11 +151,11 @@ class MindBridgeSkillLibrary:
 
     @staticmethod
     def response_skill_names(intent: IntentType, risk: RiskLevel, text: str) -> list[str]:
-        if intent == IntentType.CHAT:
-            return []
-
         if risk == RiskLevel.HIGH:
             return ["supportive_response_baseline", "high_risk_safety_plan"]
+
+        if intent == IntentType.CHAT:
+            return []
 
         lowered = text.lower()
         names = ["supportive_response_baseline", "referral_resource_guidance"]

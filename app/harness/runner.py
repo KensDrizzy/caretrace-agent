@@ -9,6 +9,8 @@ import sys
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from contextlib import ExitStack, contextmanager
+from unittest.mock import patch
 from app.core.timezone import now_cn
 from pathlib import Path
 from typing import Callable
@@ -89,15 +91,15 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_environment()
     context = build_context()
-    install_harness_patches()
-    reset_database(context)
-
-    suites = resolve_suites(args.suite)
-    results: list[CheckResult] = []
-    for name, fn in suites:
+    with install_harness_patches():
         reset_database(context)
-        InMemoryShortTermMemoryStore.reset()
-        results.append(run_check(name, fn, context))
+
+        suites = resolve_suites(args.suite)
+        results: list[CheckResult] = []
+        for name, fn in suites:
+            reset_database(context)
+            InMemoryShortTermMemoryStore.reset()
+            results.append(run_check(name, fn, context))
 
     report = write_report(context, results)
     if args.json:
@@ -149,14 +151,17 @@ def build_context() -> HarnessContext:
     )
 
 
-def install_harness_patches() -> None:
+@contextmanager
+def install_harness_patches():
+    """Scope offline memory replacements to one harness run, including failures."""
     import app.agents.event_driven_runtime as runtime_module
     import app.agents.harness as harness_module
     import app.services.memory as memory_module
 
-    harness_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
-    memory_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
-    runtime_module.RedisShortTermMemoryStore = InMemoryShortTermMemoryStore
+    with ExitStack() as patches:
+        for module in (harness_module, memory_module, runtime_module):
+            patches.enter_context(patch.object(module, "RedisShortTermMemoryStore", InMemoryShortTermMemoryStore))
+        yield
 
 
 def reset_database(context: HarnessContext) -> None:
@@ -597,12 +602,12 @@ def run_api_harness(context: HarnessContext) -> dict:
 def run_tool_queue_harness(context: HarnessContext) -> dict:
     from app.core.enums import EmotionLabel, IntentType, RiskCaseStatus, RiskLevel, ToolJobKind, ToolJobStatus, ToolStatus
     from app.models.entities import DeadLetterRecord, PsychologicalReport, ToolJob, ChatSession, UserAccount
-    from app.services.tool_queue import RateLimiter, ToolQueueService, ToolQueueWorker
+    from app.services.tool_queue import ToolQueueService, ToolQueueWorker
     from app.services.tools import ToolOrchestrationService
 
     context.settings.tool_queue_enabled = True
     db = context.session()
-    worker = ToolQueueWorker(context.settings)
+    worker = ToolQueueWorker(context.settings, context.database.SessionLocal)
     try:
         user = db.query(UserAccount).filter(UserAccount.username == "student").one()
         session = ChatSession(public_id=uuid.uuid4().hex, user_id=user.id, title="tool-queue-harness")
@@ -648,15 +653,20 @@ def run_tool_queue_harness(context: HarnessContext) -> dict:
         expect(worker._dependency_ready(db, alert_job), "alert dependency was not ready after case creation success")
 
         alert_record = tools.send_case_alert(case_record)
-        expect(alert_record.status == ToolStatus.SUCCESS.value, f"alert notify failed: {alert_record.message}")
+        expect(alert_record.status == ToolStatus.SIMULATED.value, f"log mode should be simulated: {alert_record.message}")
         db.refresh(case_record)
-        expect(case_record.status == RiskCaseStatus.ALERT_SENT.value, "case did not move to ALERT_SENT after alert")
+        expect(case_record.status == RiskCaseStatus.OPEN.value, "simulated delivery must not mark a case as sent")
 
-        limiter = RateLimiter(1)
-        first_allowed, _ = limiter.allow()
-        second_allowed, retry_after = limiter.allow()
-        expect(first_allowed, "rate limiter rejected first event")
-        expect(not second_allowed and retry_after > 0, "rate limiter did not throttle second event")
+        # Exercise the actual worker -> MCP -> server boundary, reusing receipts.
+        for job in (case_job, alert_job, excel_job):
+            job.status = ToolJobStatus.PENDING.value
+            db.commit()
+            token = worker._claim_job(job.id)
+            expect(token is not None, f"could not claim {job.kind}")
+            worker._run_job(job.id, token)
+            db.refresh(job)
+            expected = ToolJobStatus.SIMULATED.value if job.kind == ToolJobKind.ALERT_SEND.value else ToolJobStatus.SUCCESS.value
+            expect(job.status == expected, f"MCP worker failed: {job.last_error}")
 
         dead_job = ToolJob(
             report_id=report.id,

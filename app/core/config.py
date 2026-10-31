@@ -134,6 +134,12 @@ class Settings(BaseSettings):
     tool_queue_excel_workers: int = 1
     tool_queue_email_workers: int = 2
     alert_email_rate_limit_per_minute: int = 30
+    tool_queue_lease_seconds: float = Field(default=120.0, gt=0)
+    tool_mcp_timeout_seconds: float = Field(default=60.0, gt=0)
+    tool_lock_timeout_seconds: float = Field(default=10.0, gt=0)
+    alert_rate_limit_backend: str = "redis"
+    mcp_allow_case_management: bool = False
+    mcp_service_actor: str = "caretrace-worker"
 
     # 本机演示：只能由显式绑定的学生账号使用宿主机 Chrome 登录态。
     web_access_enabled: bool = False

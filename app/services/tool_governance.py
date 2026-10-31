@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.enums import RiskLevel, ToolJobKind
 from app.models.entities import PsychologicalReport, ToolAuditRecord, ToolJob, now
+from app.services.tool_errors import ToolExecutionError
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,8 @@ class ToolGovernanceService:
                     "jobId": job.id,
                     "kind": job.kind,
                     "attempts": job.attempts,
+                    "traceId": job.trace_id or "",
+                    "idempotencyKey": job.idempotency_key or "",
                     "riskLevel": report.risk_level if report is not None else None,
                     "policy": asdict(policy) if policy else None,
                 }
@@ -93,13 +96,14 @@ class ToolGovernanceService:
     def require_allowed(self, job: ToolJob, report: PsychologicalReport | None) -> None:
         allowed, reason, _ = ToolPolicyRegistry.authorize(job.kind, report)
         if not allowed:
-            raise RuntimeError(reason)
+            raise ToolExecutionError(reason, code="POLICY_DENIED", retryable=False)
 
     def finish(self, record: ToolAuditRecord, status: str, reason: str = "", payload: dict[str, Any] | None = None) -> ToolAuditRecord:
         record.status = status
         record.reason = reason or record.reason
         if payload is not None:
-            record.payload = _json(payload)
+            previous = json.loads(record.payload or "{}")
+            record.payload = _json({**previous, **payload})
         record.updated_at = now()
         self.db.add(record)
         self.db.commit()

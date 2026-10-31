@@ -98,12 +98,12 @@ def resolved_routing_table(settings: Settings) -> dict[str, dict[str, str]]:
     return table
 
 
+@install_replay_patches()
 def run_case_live(case: GoldenCase, settings: Settings, keep_db: bool = False) -> TraceRecord:
     """用真实模型回放单条 case 的最后一轮，返回解析好的 v2 TraceRecord。"""
     from app.agents.harness import MindBridgeAgentHarness
     from app.harness.runner import InMemoryShortTermMemoryStore
 
-    install_replay_patches()
     InMemoryShortTermMemoryStore.reset()
 
     db_path: Path | None = None

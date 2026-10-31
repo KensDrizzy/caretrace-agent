@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
-import re
 import sys
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from app.core.config import Settings
-from app.core.enums import RiskLevel
+from app.core.enums import RiskLevel, ToolJobKind
+from app.services.tool_errors import ToolExecutionError
 
 
-class McpToolError(RuntimeError):
+class McpToolError(ToolExecutionError):
     pass
 
 
@@ -18,68 +20,75 @@ class MindBridgeMcpToolClient:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    async def handle_report(self, report_id: int, risk_level: str | None) -> list[str]:
+    async def execute_job(self, job, case_id: int | None = None) -> dict:
+        names = {ToolJobKind.EXCEL_REPORT.value: "mindbridge_excel_report", ToolJobKind.CASE_CREATE.value: "mindbridge_case_create",
+                 ToolJobKind.ALERT_SEND.value: "mindbridge_alert_send", ToolJobKind.RISK_ALERT.value: "mindbridge_alert_notify"}
+        if job.kind not in names:
+            raise McpToolError("未知任务类型", code="UNKNOWN_TOOL", retryable=False)
+        arguments = {"job_id": job.id, "lease_token": job.lease_token, "idempotency_key": job.idempotency_key}
+        arguments.update({"case_id": case_id} if job.kind == ToolJobKind.ALERT_SEND.value else {"report_id": job.report_id})
         try:
-            async with self._session() as session:
-                results = [
-                    await self._call_tool(session, "mindbridge_excel_report", {"report_id": report_id}),
-                ]
-                case_id = None
-                if risk_level in {RiskLevel.MEDIUM.value, RiskLevel.HIGH.value}:
-                    case_result = await self._call_tool(session, "mindbridge_case_create", {"report_id": report_id})
-                    results.append(case_result)
-                    case_id = self._extract_case_id(case_result)
-                if risk_level == RiskLevel.HIGH.value:
-                    if case_id is None:
-                        raise McpToolError("高风险报告已创建，但无法解析 caseId，预警未发送")
-                    results.append(await self._call_tool(session, "mindbridge_alert_send", {"case_id": case_id}))
-                return results
-        except McpToolError:
+            async with asyncio.timeout(self.settings.tool_mcp_timeout_seconds):
+                async with self._session() as session:
+                    return await self._call_tool(session, names[job.kind], arguments)
+        except ToolExecutionError:
             raise
         except Exception as exc:
-            raise McpToolError(f"MCP 工具调用异常：{type(exc).__name__}: {exc}") from exc
+            raise McpToolError(f"MCP transport: {type(exc).__name__}", code="TRANSPORT_ERROR") from exc
+
+    async def handle_report(self, report_id: int, risk_level: str | None) -> list[dict]:
+        # Explicit synchronous compatibility mode, not the durable queue path.
+        async with asyncio.timeout(self.settings.tool_mcp_timeout_seconds):
+            async with self._session() as session:
+                results = []
+                if risk_level in {RiskLevel.MEDIUM.value, RiskLevel.HIGH.value}:
+                    case = await self._call_tool(session, "mindbridge_case_create", {"report_id": report_id})
+                    results.append(case)
+                    if risk_level == RiskLevel.HIGH.value:
+                        results.append(await self._call_tool(session, "mindbridge_alert_send", {"case_id": case["caseId"]}))
+                results.append(await self._call_tool(session, "mindbridge_excel_report", {"report_id": report_id}))
+                return results
 
     @asynccontextmanager
     async def _session(self) -> AsyncIterator[Any]:
-        try:
-            from mcp import ClientSession, StdioServerParameters
-            from mcp.client.stdio import stdio_client
-        except ImportError as exc:
-            raise McpToolError("缺少 mcp 依赖，无法通过 MCP 调用 CareTrace 工具") from exc
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
 
-        project_root = self.settings.project_root
         env = os.environ.copy()
-        python_path = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = str(project_root) if not python_path else f"{project_root}{os.pathsep}{python_path}"
-
-        server = StdioServerParameters(
-            command=sys.executable,
-            args=["-m", "app.mcp_tools.server"],
-            env=env,
-            cwd=str(project_root),
-        )
+        # Pass the resolved settings, not just the parent's environment. This is
+        # essential for isolated tests and programmatically selected DB/config.
+        for key, value in self.settings.model_dump(mode="json").items():
+            if value is not None:
+                env[key.upper()] = (json.dumps(value) if isinstance(value, (dict, list))
+                                    else str(value).lower() if isinstance(value, bool) else str(value))
+        root = self.settings.project_root
+        env["PYTHONPATH"] = str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+        server = StdioServerParameters(command=sys.executable, args=["-m", "app.mcp_tools.server"], env=env, cwd=str(root))
+        tool_error = None
         async with stdio_client(server) as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
-                yield session
+                try:
+                    yield session
+                except ToolExecutionError as exc:
+                    # Preserve retryable/code instead of letting AnyIO wrap a
+                    # business error into a transport ExceptionGroup.
+                    tool_error = exc
+        if tool_error is not None:
+            raise tool_error
 
-    async def _call_tool(self, session: Any, name: str, arguments: dict[str, Any]) -> str:
+    async def _call_tool(self, session: Any, name: str, arguments: dict[str, Any]) -> dict:
         result = await session.call_tool(name, arguments=arguments)
-        message = self._result_message(result)
-        if getattr(result, "isError", False):
-            raise McpToolError(f"{name} 调用失败：{message}")
-        return message
-
-    def _result_message(self, result: Any) -> str:
-        parts = []
-        for item in getattr(result, "content", []) or []:
-            text = getattr(item, "text", None)
-            parts.append(text if text is not None else str(item))
-        if parts:
-            return "\n".join(parts)
-        structured = getattr(result, "structuredContent", None)
-        return str(structured if structured is not None else result)
-
-    def _extract_case_id(self, message: str) -> int | None:
-        match = re.search(r"caseId=(\d+)", message)
-        return int(match.group(1)) if match else None
+        data = getattr(result, "structuredContent", None)
+        if not isinstance(data, dict):
+            try:
+                data = json.loads("\n".join(item.text for item in result.content if getattr(item, "type", None) == "text"))
+            except (ValueError, TypeError):
+                data = {}
+        if getattr(result, "isError", False) or data.get("status") == "FAILED":
+            error = data.get("error") or {}
+            raise McpToolError(error.get("message", f"{name} failed"), code=error.get("code", "TOOL_ERROR"),
+                               retryable=error.get("retryable", True), retry_after=error.get("retryAfter"))
+        if data.get("status") not in {"SUCCESS", "SIMULATED"}:
+            raise McpToolError("工具返回了未知结果结构", code="INVALID_RESULT", retryable=False)
+        return data

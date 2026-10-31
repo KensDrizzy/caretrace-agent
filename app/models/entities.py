@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
-from sqlalchemy.dialects.mysql import MEDIUMTEXT
+from sqlalchemy.dialects.mysql import MEDIUMTEXT, DATETIME as MYSQL_DATETIME
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -148,6 +148,8 @@ class AlertRecord(Base):
     recipient: Mapped[str] = mapped_column(String(256))
     status: Mapped[str] = mapped_column(String(32))
     message: Mapped[str] = mapped_column(Text)
+    delivery_key: Mapped[Optional[str]] = mapped_column(String(64), unique=True, nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
@@ -172,10 +174,26 @@ class ToolJob(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     depends_on_job_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-    run_after: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    run_after: Mapped[datetime] = mapped_column(DateTime().with_variant(MYSQL_DATETIME(fsp=6), "mysql"), default=now, index=True)
     last_error: Mapped[str] = mapped_column(Text, default="")
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(191), unique=True, nullable=True)
+    trace_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    worker_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lease_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime().with_variant(MYSQL_DATETIME(fsp=6), "mysql"), nullable=True, index=True)
+    result_json: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class ToolExecutionRecord(Base):
+    """Durable receipt; keys are scoped to immutable business operations."""
+    __tablename__ = "tool_execution_records"
+
+    idempotency_key: Mapped[str] = mapped_column(String(191), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
 class DeadLetterRecord(Base):

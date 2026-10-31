@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -9,10 +9,11 @@ from app.agents.event_driven_runtime import EventDrivenAgentRuntimeService
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import current_user, require_admin
-from app.models.entities import UserAccount
-from app.schemas.dtos import ChatRequest, ChatSessionRenameRequest, ChatSessionResponse, ConversationResponse, KnowledgeIngestRequest, KnowledgeIngestResponse, authority
+from app.models.entities import ChatSession, UserAccount
+from app.schemas.dtos import ToolReplayRequest, ChatRequest, ChatSessionRenameRequest, ChatSessionResponse, ConversationResponse, KnowledgeIngestRequest, KnowledgeIngestResponse, authority
 from app.services.chat import ChatService
 from app.services.knowledge import KnowledgeService
+from app.services.memory import RedisShortTermMemoryStore
 from app.services.model_assets import campus_model_status, finetuned_model_status
 from app.services.report import ReportService
 from app.services.skills import MindBridgeSkillLibrary
@@ -43,6 +44,14 @@ async def chat_stream(
 ):
     if "ROLE_ADMIN" in user.roles:
         raise HTTPException(403, "管理员账号只能查看后台记录，不能发起学生对话。")
+    if request.sessionId:
+        session = db.query(ChatSession.id).filter(
+            ChatSession.public_id == request.sessionId,
+            ChatSession.user_id == user.id,
+            ChatSession.deleted_at.is_(None),
+        ).first()
+        if session is None:
+            raise HTTPException(404, "Session not found")
     service = ChatService(db, get_settings())
     return StreamingResponse(service.stream_chat(user, request), media_type="text/event-stream")
 
@@ -123,6 +132,20 @@ def rename_my_session(
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.delete("/api/chat/sessions/{session_id}", status_code=204)
+def delete_my_session(
+    session_id: str,
+    user: Annotated[UserAccount, Depends(current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        ReportService(db).delete_user_session(user.id, session_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    RedisShortTermMemoryStore(get_settings()).clear(session_id)
+    return Response(status_code=204)
+
+
 @router.get("/api/chat/sessions/{session_id}")
 def my_session_messages(session_id: str, user: Annotated[UserAccount, Depends(current_user)], db: Annotated[Session, Depends(get_db)]):
     try:
@@ -159,6 +182,27 @@ def admin_case_notes(case_id: int, _: Annotated[UserAccount, Depends(require_adm
 @router.get("/api/admin/tool-jobs")
 def admin_tool_jobs(_: Annotated[UserAccount, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     return ReportService(db).tool_jobs()
+
+
+@router.get("/api/admin/tool-jobs/{job_id}")
+def admin_tool_job_detail(job_id: int, _: Annotated[UserAccount, Depends(require_admin)],
+                          db: Annotated[Session, Depends(get_db)]):
+    try:
+        return ReportService(db).tool_job_detail(job_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/api/admin/tool-jobs/{job_id}/replay")
+def admin_replay_tool_job(job_id: int, request: ToolReplayRequest,
+                          actor: Annotated[UserAccount, Depends(require_admin)],
+                          db: Annotated[Session, Depends(get_db)]):
+    from app.services.tool_queue import ToolQueueService
+    try:
+        job = ToolQueueService(db, get_settings()).replay(job_id, actor.username, request.reason)
+        return {"jobId": job.id, "status": job.status}
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/api/admin/dead-letters")
