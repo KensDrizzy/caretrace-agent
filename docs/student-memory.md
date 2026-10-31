@@ -52,3 +52,11 @@
 ## 完整轮次和单次注入
 
 近期消息数量为软目标：若窗口从助手回复开始，扩展到该轮用户消息，摘要游标也停在该轮之前。最终回答中摘要只注入一次；ContextAgent 的检索可以继续使用同一 brief。超长消息仍受字符配置约束，此版本不宣称精确 token 预算。
+
+## 跨层去重与最终输入预算
+
+准备上下文时，只把近期学生原文和当前输入作为去重依据：已出现的逐字事实不再从长期库重复注入；摘要中已由原文或召回事实覆盖的要点也不再重复。去重只影响本次 Prompt，不删除持久记忆。不使用语义相似度合并事实，避免把否定、修正或时间变化误判为重复。注入的事实包含来源会话 ID、消息 ID 和更新时间，便于核查。
+
+`RESPONSE_PROMPT_MAX_CHARS` 默认 18000，作用于 ResponseAgent 组装后的实际消息内容（含系统规则、Skill、知识、记忆、网页证据和历史）。超限时按顺序移除最旧的完整对话轮次、可选上下文消息，保留前两条规则/Skill消息及当前用户输入。若必须保留的内容自身超限，完整保留并在响应 artifact 的 `contextBudget.exceeded` 中标记；不会静默截断用户请求。知识证据另有原有的单独上限，规则/Skill与用户输入构成软预算下界。
+
+这是**字符软预算**，不等同于不同模型的 token 窗口。`contextBudget` 记录 beforeChars、afterChars、removedTurns、removedContextMessages 与 exceeded；记忆准备事件记录 injectedMemories、memoryChars。模型的输出 token 配置独立生效。

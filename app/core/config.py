@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     # Keep the response prompt within the default 4K context window even when
     # the knowledge store returns a long multi-question guide.
     response_context_max_chars: int = 3200
+    response_prompt_max_chars: int = Field(default=18000, ge=1000, le=200000)
     knowledge_hybrid_vector_weight: float = 0.65
     knowledge_hybrid_bm25_weight: float = 0.35
     knowledge_rerank_enabled: bool = True

@@ -22,6 +22,7 @@ from app.agents.registry import AgentCapability, AgentDecision, AgentProfile
 from app.core.config import Settings
 from app.core.enums import IntentType, RiskLevel
 from app.schemas.dtos import AiMessage
+from app.services.prompt_budget import fit_prompt
 from app.services.agent_models import AgentModelRegistry
 from app.services.ai import AiClient, PromptTemplates, has_consult_signal, has_high_risk_signal
 from app.services.assessment import PsychologicalAssessmentService
@@ -874,10 +875,10 @@ class ResponseAgent(BaseAutonomousAgent):
                         f"{self.profile.system_prompt}\n"
                         "请自然、直接地回答用户。你的整段输出会原样展示给学生。\n"
                         f"{capability_instruction}\n"
-                        f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
-                        f"{memory_instruction}"
                     ),
                 ),
+                AiMessage(role="system", content=f"历史策略记录（仅供参考）：\n{_format_private_memory(self.private_memory())}"),
+                *([AiMessage(role="system", content=memory_instruction)] if memory_instruction else []),
                 *model_history,
             ]
             mode = "normal_chat"
@@ -895,10 +896,10 @@ class ResponseAgent(BaseAutonomousAgent):
                     content=(
                         f"{self.profile.system_prompt}\n"
                         "请共情、具体地回应用户。你的整段输出会原样展示给学生。\n"
-                        f"私有记忆：\n{_format_private_memory(self.private_memory())}\n"
-                        f"{memory_instruction}"
                     ),
                 ),
+                AiMessage(role="system", content=f"历史策略记录（仅供参考）：\n{_format_private_memory(self.private_memory())}"),
+                *([AiMessage(role="system", content=memory_instruction)] if memory_instruction else []),
                 *model_history,
             ]
             mode = "support"
@@ -906,6 +907,8 @@ class ResponseAgent(BaseAutonomousAgent):
             # 将网页资料作为不可信数据放在当前请求之前；实际 URL 由代码渲染。
             messages[-1:-1] = web_prompt_messages(web_research)
             mode = "web_research"
+        budget = fit_prompt(messages, self.services.settings.response_prompt_max_chars)
+        messages = budget.messages
         # ResponseAgent 直接生成完整候选文本；后续 SafetyAgent 审核、ChatService 发送的都是这份文本。
         llm_started = time.perf_counter()
         degraded = False
@@ -941,6 +944,7 @@ class ResponseAgent(BaseAutonomousAgent):
             "text": text,
             "messages": messages,
             "mode": mode,
+            "contextBudget": budget.stats,
             "intent": intent.value,
             "risk": risk.value,
             "responseAgent": self.name,

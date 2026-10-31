@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -220,3 +221,42 @@ def test_response_injects_memory_brief_once(env, monkeypatch):
     result = EventDrivenAgentRuntimeService(db, cfg).run(user, session, '你好', '你好')
     assert result.memory_brief
     assert sum(m.content.count(result.memory_brief) for m in result.response_messages) == 1
+
+
+def test_recent_user_facts_are_not_repeated_as_recalled_memory(env):
+    db, cfg, (a, b), (sa, sb) = env
+    svc = StudentMemoryService(db, cfg, Embeddings())
+    row = store(db, svc, a, sa, '我正在准备考研')
+    db.commit()
+    prompt, brief = svc.prepare(a.id, sa, '考研怎么安排', [])
+    data = json.loads(brief)
+    assert data['memories'] == []
+    assert '我正在准备考研' in prompt[-1].content
+    db.commit(); db.refresh(row)
+    assert row.access_count == 0
+
+
+def test_recall_provenance_and_summary_dedup(env):
+    db, cfg, (a, b), (sa, sb) = env
+    svc = StudentMemoryService(db, cfg, Embeddings())
+    row = store(db, svc, a, sa, '我正在准备考研')
+    other = ChatSession(public_id='another', title='new', user_id=a.id)
+    db.add(other); db.flush()
+    db.add(ConversationSummary(session_id=other.id, user_id=a.id, cursor=0,
+        summary='我正在准备考研\n昨晚睡得不太好'))
+    db.commit()
+    _, brief = svc.prepare(a.id, other, '硕士入学', [])
+    data = json.loads(brief)
+    assert data['memories'][0]['sourceMessageId'] == row.source_message_id
+    assert data['memories'][0]['sourceSessionId'] == sa.id
+    assert data['rollingSummary'] == '昨晚睡得不太好'
+    # Prompt dedup must never destroy durable summary information.
+    assert db.get(ConversationSummary, other.id).summary.startswith('我正在准备考研')
+
+
+def test_corrections_are_not_semantically_deduplicated(env):
+    db, cfg, (a, b), (sa, sb) = env
+    svc = StudentMemoryService(db, cfg, Embeddings())
+    row = store(db, svc, a, sa, '我更喜欢简短的建议')
+    result = svc.recall(a.id, '建议', recent_user_texts=['我不喜欢简短的建议'])
+    assert row in result
